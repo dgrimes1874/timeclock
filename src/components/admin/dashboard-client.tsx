@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { Clock, CheckCircle, XCircle, AlertTriangle, Users } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, Timestamp } from 'firebase/firestore';
 
 interface CombinedEntry {
   employee: Document<Employee>;
@@ -21,16 +21,19 @@ interface CombinedEntry {
 export default function DashboardClient() {
   const firestore = useFirestore();
   const { data: employees = [] } = useCollection<Employee>(firestore ? collection(firestore, 'employees') : null);
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
   
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const startOfToday = new Date(todayStr);
+  const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+
   const timeEntriesQuery = useMemo(() => {
     if (!firestore) return null;
     return query(
       collection(firestore, 'timeEntries'), 
-      where('date', '>=', new Date(todayStr)),
-      where('date', '<', new Date(new Date(todayStr).getTime() + 24 * 60 * 60 * 1000))
+      where('date', '>=', Timestamp.fromDate(startOfToday)),
+      where('date', '<', Timestamp.fromDate(endOfToday))
     );
-  }, [firestore, todayStr]);
+  }, [firestore, startOfToday.getTime(), endOfToday.getTime()]);
 
   const { data: timeEntries = [] } = useCollection<TimeEntry>(timeEntriesQuery);
 
@@ -39,20 +42,21 @@ export default function DashboardClient() {
 
   useEffect(() => {
     setIsClient(true);
+    setCurrentTime(new Date());
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const combinedData: CombinedEntry[] = employees.map(employee => {
+  const combinedData: CombinedEntry[] = useMemo(() => employees.map(employee => {
     const entry = timeEntries.find(e => e.employeeId === employee.id);
     let status: CombinedEntry['status'] = 'Clocked Out';
     if (entry?.clockIn && !entry.clockOut) {
       status = isLate(entry.clockIn.toDate()) ? 'Late' : 'Clocked In';
     }
     return { employee, entry, status };
-  });
+  }), [employees, timeEntries]);
 
   const getStatusBadge = (status: CombinedEntry['status']) => {
     switch (status) {

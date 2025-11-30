@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,7 +35,9 @@ const rulesSchema = z.object({
 
 export default function EmployeesClient() {
   const firestore = useFirestore();
-  const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
+  const employeesCollection = useMemo(() => firestore ? collection(firestore, 'employees') : null, [firestore]);
+  const { data: employees = [], loading: employeesLoading } = useCollection<Employee>(employeesCollection);
+
   const [selectedEmployee, setSelectedEmployee] = useState<Document<Employee> | null>(null);
   const [isFormOpen, setFormOpen] = useState(false);
   const { toast } = useToast();
@@ -83,16 +85,16 @@ export default function EmployeesClient() {
           errorEmitter.emit('permission-error', permissionError);
         });
     } else {
-      const collRef = collection(firestore, 'employees');
+      if (!employeesCollection) return;
       const dataToCreate = { ...employeeData, rules: 'Standard pay rules apply.' };
-      addDoc(collRef, dataToCreate)
+      addDoc(employeesCollection, dataToCreate)
         .then(() => {
           toast({ title: 'Success', description: 'Employee added successfully.' });
           setFormOpen(false);
         })
         .catch(async (serverError) => {
           const permissionError = new FirestorePermissionError({
-            path: collRef.path,
+            path: employeesCollection.path,
             operation: 'create',
             requestResourceData: dataToCreate,
           });
