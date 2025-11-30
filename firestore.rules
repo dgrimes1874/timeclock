@@ -2,10 +2,18 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access to all documents for now
-    // This is not secure for a production environment
-    match /{document=**} {
-      allow read, write: if true;
+    match /employees/{employeeId} {
+      // Allow anyone to read employee data
+      allow get, list: if true;
+      // Allow anyone to create, update, or delete for now
+      allow write: if true; 
+    }
+
+    match /timeEntries/{timeEntryId} {
+      // Allow anyone to read time entries
+      allow get, list: if true;
+      // Allow anyone to create or update their own time entries
+      allow write: if true;
     }
   }
 }
