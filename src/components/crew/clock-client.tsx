@@ -22,11 +22,12 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useCollection } from '@/firebase';
+import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc } from 'firebase/firestore';
 
 export default function ClockClient() {
-  const { data: employees = [], firestore } = useCollection<Employee>('employees');
+  const firestore = useFirestore();
+  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
   const [timeEntries, setTimeEntries] = useState<Document<TimeEntry>[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);

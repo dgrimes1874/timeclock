@@ -16,7 +16,7 @@ import { PlusCircle, Edit, Loader2 } from 'lucide-react';
 import { customizePayrollRules } from '@/ai/flows/customize-payroll-rules';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { useCollection } from '@/firebase';
+import { useCollection, useFirestore } from '@/firebase';
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 
 const employeeSchema = z.object({
@@ -32,7 +32,8 @@ const rulesSchema = z.object({
 });
 
 export default function EmployeesClient() {
-  const { data: employees = [], firestore } = useCollection<Employee>('employees');
+  const firestore = useFirestore();
+  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
   const [selectedEmployee, setSelectedEmployee] = useState<Document<Employee> | null>(null);
   const [isFormOpen, setFormOpen] = useState(false);
   const { toast } = useToast();

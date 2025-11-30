@@ -9,8 +9,8 @@ import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { Clock, CheckCircle, XCircle, AlertTriangle, Users } from 'lucide-react';
-import { useCollection } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { useCollection, useFirestore } from '@/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 interface CombinedEntry {
   employee: Document<Employee>;
@@ -19,12 +19,13 @@ interface CombinedEntry {
 }
 
 export default function DashboardClient() {
-  const { data: employees = [] } = useCollection<Employee>(collection(useCollection.firestore, 'employees'));
+  const firestore = useFirestore();
+  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   
   const { data: timeEntries = [] } = useCollection<TimeEntry>(
     query(
-      collection(useCollection.firestore, 'timeEntries'), 
+      collection(firestore, 'timeEntries'), 
       where('date', '>=', new Date(todayStr)),
       where('date', '<', new Date(new Date(todayStr).getTime() + 24 * 60 * 60 * 1000))
     )

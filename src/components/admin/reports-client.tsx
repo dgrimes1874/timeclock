@@ -8,7 +8,7 @@ import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
 import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
 import { Download } from 'lucide-react';
-import { useCollection } from '@/firebase';
+import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 
 interface WeeklyReportData {
@@ -30,13 +30,14 @@ interface WeeklyReportData {
 }
 
 export default function ReportsClient() {
-  const { data: employees = [] } = useCollection<Employee>('employees');
+  const firestore = useFirestore();
+  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
   
   const { start, end } = getWeekDateRange();
 
   const { data: timeEntries = [] } = useCollection<TimeEntry>(
     query(
-      collection(useCollection.firestore, 'timeEntries'),
+      collection(firestore, 'timeEntries'),
       where('date', '>=', start),
       where('date', '<=', end)
     )
