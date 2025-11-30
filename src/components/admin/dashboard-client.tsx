@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -20,16 +20,19 @@ interface CombinedEntry {
 
 export default function DashboardClient() {
   const firestore = useFirestore();
-  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
+  const { data: employees = [] } = useCollection<Employee>(firestore ? collection(firestore, 'employees') : null);
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   
-  const { data: timeEntries = [] } = useCollection<TimeEntry>(
-    query(
+  const timeEntriesQuery = useMemo(() => {
+    if (!firestore) return null;
+    return query(
       collection(firestore, 'timeEntries'), 
       where('date', '>=', new Date(todayStr)),
       where('date', '<', new Date(new Date(todayStr).getTime() + 24 * 60 * 60 * 1000))
-    )
-  );
+    );
+  }, [firestore, todayStr]);
+
+  const { data: timeEntries = [] } = useCollection<TimeEntry>(timeEntriesQuery);
 
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);

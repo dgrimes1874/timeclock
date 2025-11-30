@@ -52,18 +52,21 @@ type EditingEntry = {
 export default function ReportsClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
+  const { data: employees = [] } = useCollection<Employee>(firestore ? collection(firestore, 'employees') : null);
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const { start, end } = getWeekDateRange(currentDate);
 
-  const { data: timeEntries = [], setData: setTimeEntries } = useCollection<TimeEntry>(
-    firestore ? query(
+  const timeEntriesQuery = useMemo(() => {
+    if (!firestore) return null;
+    return query(
       collection(firestore, 'timeEntries'),
       where('date', '>=', start),
       where('date', '<=', end)
-    ) : null
-  );
+    );
+  }, [firestore, start, end]);
+
+  const { data: timeEntries = [], setData: setTimeEntries } = useCollection<TimeEntry>(timeEntriesQuery);
 
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
@@ -198,7 +201,7 @@ export default function ReportsClient() {
             const newDocRef = await addDoc(collRef, newEntryData);
             
             // Optimistically update local state for immediate UI feedback
-            setTimeEntries(prev => [...prev, { id: newDocRef.id, ...newEntryData }]);
+            setTimeEntries(prev => [...prev, { id: newDocRef.id, ...newEntryData } as Document<TimeEntry>]);
             
             toast({ title: 'Success', description: 'Time entry created.' });
         }
