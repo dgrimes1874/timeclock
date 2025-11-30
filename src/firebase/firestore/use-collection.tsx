@@ -12,23 +12,22 @@ import {
 } from 'firebase/firestore';
 import {useFirestore} from '..';
 import type {Document} from '@/lib/data';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
-function useCollection<T>(pathOrQuery: string | Query<T>): {
+function useCollection<T>(pathOrQuery: string | Query<T> | null): {
   data: Document<T>[];
   loading: boolean;
   error: Error | null;
-  firestore: Firestore;
 };
-function useCollection<T>(
-  pathOrQuery: string | Query<T>
-): {data: Document<T>[]; loading: boolean; error: Error | null; firestore: Firestore} {
+function useCollection<T>(pathOrQuery: string | Query<T> | null): {data: Document<T>[]; loading: boolean; error: Error | null} {
   const firestore = useFirestore();
   const [data, setData] = useState<Document<T>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   const memoizedQuery = useMemo(() => {
-    if (!pathOrQuery) return null;
+    if (!firestore || !pathOrQuery) return null;
     return typeof pathOrQuery === 'string'
       ? (collection(firestore, pathOrQuery) as CollectionReference<T>)
       : (pathOrQuery as Query<T>);
@@ -50,9 +49,13 @@ function useCollection<T>(
         setData(docs);
         setLoading(false);
       },
-      err => {
-        console.error(err);
-        setError(err);
+      async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: memoizedQuery.path,
+            operation: 'list',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError);
         setLoading(false);
       }
     );
@@ -60,7 +63,7 @@ function useCollection<T>(
     return () => unsubscribe();
   }, [memoizedQuery]);
 
-  return {data, loading, error, firestore};
+  return {data, loading, error};
 }
 
 export {useCollection};

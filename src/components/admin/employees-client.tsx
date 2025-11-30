@@ -18,6 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const employeeSchema = z.object({
   id: z.string().optional(),
@@ -33,7 +35,7 @@ const rulesSchema = z.object({
 
 export default function EmployeesClient() {
   const firestore = useFirestore();
-  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
+  const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
   const [selectedEmployee, setSelectedEmployee] = useState<Document<Employee> | null>(null);
   const [isFormOpen, setFormOpen] = useState(false);
   const { toast } = useToast();
@@ -56,7 +58,7 @@ export default function EmployeesClient() {
   };
 
   const handleAdd = () => {
-    form.reset({ name: '', hourlyRate: 0, onTimeBonus: 0 });
+    form.reset({ name: '', hourlyRate: 0, onTimeBonus: 0, rules: 'Standard pay rules apply.' });
     setSelectedEmployee(null);
     setFormOpen(true);
   };
@@ -65,17 +67,37 @@ export default function EmployeesClient() {
     if (!firestore) return;
     const { id, ...employeeData } = values;
 
-    try {
-      if (id) {
-        await updateDoc(doc(firestore, 'employees', id), employeeData);
-        toast({ title: 'Success', description: 'Employee updated successfully.' });
-      } else {
-        await addDoc(collection(firestore, 'employees'), { ...employeeData, rules: 'Standard pay rules apply.' });
-        toast({ title: 'Success', description: 'Employee added successfully.' });
-      }
-      setFormOpen(false);
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    if (id) {
+      const docRef = doc(firestore, 'employees', id);
+      updateDoc(docRef, employeeData)
+        .then(() => {
+          toast({ title: 'Success', description: 'Employee updated successfully.' });
+          setFormOpen(false);
+        })
+        .catch(async (serverError) => {
+          const permissionError = new FirestorePermissionError({
+            path: docRef.path,
+            operation: 'update',
+            requestResourceData: employeeData,
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        });
+    } else {
+      const collRef = collection(firestore, 'employees');
+      const dataToCreate = { ...employeeData, rules: 'Standard pay rules apply.' };
+      addDoc(collRef, dataToCreate)
+        .then(() => {
+          toast({ title: 'Success', description: 'Employee added successfully.' });
+          setFormOpen(false);
+        })
+        .catch(async (serverError) => {
+          const permissionError = new FirestorePermissionError({
+            path: collRef.path,
+            operation: 'create',
+            requestResourceData: dataToCreate,
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        });
     }
   };
 
@@ -101,16 +123,23 @@ export default function EmployeesClient() {
   
   const applyAdjustedRules = async () => {
     if (selectedEmployee && adjustedRules && firestore) {
-        try {
-            await updateDoc(doc(firestore, 'employees', selectedEmployee.id), { rules: adjustedRules });
-            toast({ title: 'Rules Updated', description: `Payroll rules for ${selectedEmployee.name} have been updated.` });
-            setAdjustedRules(null);
-            rulesForm.reset();
-            // Refetch or update local state
-            setSelectedEmployee(prev => prev ? {...prev, rules: adjustedRules} : null);
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Error updating rules', description: error.message });
-        }
+        const docRef = doc(firestore, 'employees', selectedEmployee.id);
+        const updatedData = { rules: adjustedRules };
+        updateDoc(docRef, updatedData)
+            .then(() => {
+                toast({ title: 'Rules Updated', description: `Payroll rules for ${selectedEmployee.name} have been updated.` });
+                setAdjustedRules(null);
+                rulesForm.reset();
+                setSelectedEmployee(prev => prev ? {...prev, rules: adjustedRules} : null);
+            })
+            .catch(async (serverError) => {
+                const permissionError = new FirestorePermissionError({
+                    path: docRef.path,
+                    operation: 'update',
+                    requestResourceData: updatedData,
+                });
+                errorEmitter.emit('permission-error', permissionError);
+            });
     }
   };
 
@@ -157,7 +186,10 @@ export default function EmployeesClient() {
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <Button type="submit">Save Employee</Button>
+                    <Button type="submit" disabled={form.formState.isSubmitting}>
+                        {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Employee
+                    </Button>
                   </form>
                 </Form>
               </DialogContent>
@@ -175,7 +207,9 @@ export default function EmployeesClient() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {employees.map((employee) => (
+              {employeesLoading ? (
+                <TableRow><TableCell colSpan={4} className="text-center">Loading...</TableCell></TableRow>
+              ) : employees.map((employee) => (
                 <TableRow key={employee.id} onClick={() => { setSelectedEmployee(employee); setAdjustedRules(null); rulesForm.reset(); }} className="cursor-pointer" data-state={selectedEmployee?.id === employee.id ? 'selected' : ''}>
                   <TableCell className="font-medium">{employee.name}</TableCell>
                   <TableCell>{formatCurrency(employee.hourlyRate)}</TableCell>

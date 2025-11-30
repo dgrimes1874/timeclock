@@ -9,15 +9,18 @@ import {
 } from 'firebase/firestore';
 import {useFirestore} from '..';
 import type {Document} from '@/lib/data';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
-export function useDoc<T>(pathOrRef: string | DocumentReference<T>) {
+
+export function useDoc<T>(pathOrRef: string | DocumentReference<T> | null) {
   const firestore = useFirestore();
   const [data, setData] = useState<Document<T> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   const memoizedRef = useMemo(() => {
-    if (!pathOrRef) return null;
+    if (!firestore || !pathOrRef) return null;
     return typeof pathOrRef === 'string'
       ? (doc(firestore, pathOrRef) as DocumentReference<T>)
       : (pathOrRef as DocumentReference<T>);
@@ -43,9 +46,13 @@ export function useDoc<T>(pathOrRef: string | DocumentReference<T>) {
         }
         setLoading(false);
       },
-      err => {
-        console.error(err);
-        setError(err);
+      async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+            path: memoizedRef.path,
+            operation: 'get',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+        setError(permissionError);
         setLoading(false);
       }
     );

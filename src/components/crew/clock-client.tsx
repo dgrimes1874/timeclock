@@ -8,7 +8,7 @@ import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, LogIn, LogOut, Timer } from 'lucide-react';
+import { ArrowLeft, LogIn, LogOut, Timer, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
   Dialog,
@@ -24,20 +24,28 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
+
 
 export default function ClockClient() {
   const firestore = useFirestore();
-  const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
+  const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
   const [timeEntries, setTimeEntries] = useState<Document<TimeEntry>[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  const [isClient, setIsClient] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
   const [adminCode, setAdminCode] = useState('');
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [isClocking, setIsClocking] = useState(false);
+  const [isFetchingEntries, setIsFetchingEntries] = useState(false);
+
 
   useEffect(() => {
+    setIsClient(true);
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -45,6 +53,7 @@ export default function ClockClient() {
   useEffect(() => {
     const fetchTimeEntries = async () => {
       if (firestore && selectedEmployeeId) {
+        setIsFetchingEntries(true);
         const todayStr = format(new Date(), 'yyyy-MM-dd');
         const startOfToday = new Date(todayStr);
         const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
@@ -61,6 +70,9 @@ export default function ClockClient() {
           entries.push({ id: doc.id, ...doc.data() } as Document<TimeEntry>);
         });
         setTimeEntries(entries);
+        setIsFetchingEntries(false);
+      } else {
+        setTimeEntries([]);
       }
     };
     fetchTimeEntries();
@@ -79,39 +91,62 @@ export default function ClockClient() {
       return;
     }
     
+    setIsClocking(true);
     const now = new Date();
     const nowTimestamp = Timestamp.fromDate(now);
 
-    try {
-      if (status === 'Clocked Out') { // Clocking In
-        const newEntry: Omit<TimeEntry, 'id' | 'clockOut'> & { clockOut: null } = {
-          employeeId: selectedEmployeeId,
-          clockIn: nowTimestamp,
-          clockOut: null,
-          date: Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), now.getDate())),
-        };
-        const docRef = await addDoc(collection(firestore, 'timeEntries'), newEntry);
-        setTimeEntries([{ id: docRef.id, ...newEntry } as Document<TimeEntry>]);
-      } else { // Clocking Out
-        if (todayEntryForSelected) {
-          const entryRef = doc(firestore, 'timeEntries', todayEntryForSelected.id);
-          await updateDoc(entryRef, { clockOut: nowTimestamp });
-          setTimeEntries(prev => prev.map(e => e.id === todayEntryForSelected.id ? {...e, clockOut: nowTimestamp} : e));
-        }
+    if (status === 'Clocked Out') { // Clocking In
+      const collRef = collection(firestore, 'timeEntries');
+      const newEntry: Omit<TimeEntry, 'id' | 'clockOut'> & { clockOut: null } = {
+        employeeId: selectedEmployeeId,
+        clockIn: nowTimestamp,
+        clockOut: null,
+        date: Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), now.getDate())),
+      };
+      
+      addDoc(collRef, newEntry)
+        .then((docRef) => {
+            setTimeEntries([{ id: docRef.id, ...newEntry } as Document<TimeEntry>]);
+            toast({
+                title: `Successfully Clocked In`,
+                description: `${format(now, 'HH:mm:ss')} - ${isLate(now) ? 'You have been marked as late.' : 'You are now clocked in.'}`
+            });
+        })
+        .catch(async (serverError) => {
+            const permissionError = new FirestorePermissionError({
+                path: collRef.path,
+                operation: 'create',
+                requestResourceData: newEntry,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        })
+        .finally(() => setIsClocking(false));
+
+    } else { // Clocking Out
+      if (todayEntryForSelected) {
+        const entryRef = doc(firestore, 'timeEntries', todayEntryForSelected.id);
+        const updatedData = { clockOut: nowTimestamp };
+
+        updateDoc(entryRef, updatedData)
+            .then(() => {
+                setTimeEntries(prev => prev.map(e => e.id === todayEntryForSelected.id ? {...e, clockOut: nowTimestamp} : e));
+                toast({
+                    title: `Successfully Clocked Out`,
+                    description: `${format(now, 'HH:mm:ss')} - You are now clocked out.`
+                });
+            })
+            .catch(async (serverError) => {
+                const permissionError = new FirestorePermissionError({
+                    path: entryRef.path,
+                    operation: 'update',
+                    requestResourceData: updatedData
+                });
+                errorEmitter.emit('permission-error', permissionError);
+            })
+            .finally(() => setIsClocking(false));
+      } else {
+        setIsClocking(false);
       }
-
-      const action = status === 'Clocked Out' ? 'Clocked In' : 'Clocked Out';
-      const description = action === 'Clocked In' && isLate(now)
-        ? 'You have been marked as late.'
-        : `You are now ${action.toLowerCase()}.`;
-        
-      toast({
-          title: `Successfully ${action}`,
-          description: `${format(now, 'HH:mm:ss')} - ${description}`
-      });
-
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Firebase Error', description: error.message });
     }
   };
   
@@ -127,6 +162,8 @@ export default function ClockClient() {
       setAdminCode('');
     }
   };
+  
+  if (!isClient) return null;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-muted/40 p-4">
@@ -178,9 +215,9 @@ export default function ClockClient() {
           <CardDescription>Select your name and clock in or out for your shift.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
-          <Select onValueChange={setSelectedEmployeeId} value={selectedEmployeeId || ''}>
+          <Select onValueChange={setSelectedEmployeeId} value={selectedEmployeeId || ''} disabled={employeesLoading}>
             <SelectTrigger className="h-12 text-base">
-              <SelectValue placeholder="Select Your Name..." />
+              <SelectValue placeholder={employeesLoading ? "Loading employees..." : "Select Your Name..."} />
             </SelectTrigger>
             <SelectContent>
               {employees.map(employee => (
@@ -202,26 +239,32 @@ export default function ClockClient() {
           {selectedEmployee && (
             <div className="text-center">
                 <p className="text-muted-foreground">Status for {selectedEmployee.name}</p>
-                <p className={`text-2xl font-semibold ${status === 'Clocked In' ? 'text-green-600' : 'text-gray-500'}`}>
-                    {status}
-                </p>
-                 {status === 'Clocked In' && todayEntryForSelected?.clockIn && (
-                    <p className="text-sm text-muted-foreground">
-                        Clocked in at {format(todayEntryForSelected.clockIn.toDate(), 'HH:mm')}
-                        {isLate(todayEntryForSelected.clockIn.toDate()) && <span className="text-red-600 font-semibold"> (Late)</span>}
-                    </p>
+                {isFetchingEntries ? (
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                ) : (
+                    <>
+                        <p className={`text-2xl font-semibold ${status === 'Clocked In' ? 'text-green-600' : 'text-gray-500'}`}>
+                            {status}
+                        </p>
+                        {status === 'Clocked In' && todayEntryForSelected?.clockIn && (
+                            <p className="text-sm text-muted-foreground">
+                                Clocked in at {format(todayEntryForSelected.clockIn.toDate(), 'HH:mm')}
+                                {isLate(todayEntryForSelected.clockIn.toDate()) && <span className="text-red-600 font-semibold"> (Late)</span>}
+                            </p>
+                        )}
+                    </>
                 )}
             </div>
           )}
 
           <Button 
             onClick={handleClockAction} 
-            disabled={!selectedEmployeeId} 
+            disabled={!selectedEmployeeId || isClocking || isFetchingEntries} 
             className="h-16 text-xl"
             variant={status === 'Clocked In' ? 'secondary' : 'default'}
           >
-            {status === 'Clocked Out' ? <LogIn className="mr-2 h-6 w-6" /> : <LogOut className="mr-2 h-6 w-6" />}
-            {status === 'Clocked Out' ? 'Clock In' : 'Clock Out'}
+            {isClocking ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : (status === 'Clocked Out' ? <LogIn className="mr-2 h-6 w-6" /> : <LogOut className="mr-2 h-6 w-6" />)}
+            {isClocking ? 'Processing...' : (status === 'Clocked Out' ? 'Clock In' : 'Clock Out')}
           </Button>
         </CardContent>
       </Card>
