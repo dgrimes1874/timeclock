@@ -1,1 +1,6 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/customize-payroll-rules.ts';
+import '@/ai/flows/generate-report-summaries.ts';
+import '@/ai/flows/customize-payroll-parameters.ts';

@@ -1,0 +1,11 @@
+import ClockClient from "@/components/crew/clock-client";
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Crew Clock In/Out | TimeWise Payroll',
+  description: 'Clock in or out for your shift.',
+};
+
+export default function CrewPage() {
+    return <ClockClient />;
+}
