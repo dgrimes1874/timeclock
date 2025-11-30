@@ -22,18 +22,18 @@ export default function DashboardClient() {
   const firestore = useFirestore();
   const { data: employees = [] } = useCollection<Employee>(firestore ? collection(firestore, 'employees') : null);
   
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const startOfToday = new Date(todayStr);
-  const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
-
+  const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
+  
   const timeEntriesQuery = useMemo(() => {
     if (!firestore) return null;
+    const startOfToday = new Date(todayStr);
+    const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
     return query(
       collection(firestore, 'timeEntries'), 
       where('date', '>=', Timestamp.fromDate(startOfToday)),
       where('date', '<', Timestamp.fromDate(endOfToday))
     );
-  }, [firestore, startOfToday.getTime(), endOfToday.getTime()]);
+  }, [firestore, todayStr]);
 
   const { data: timeEntries = [] } = useCollection<TimeEntry>(timeEntriesQuery);
 

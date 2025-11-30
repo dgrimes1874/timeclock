@@ -8,24 +8,35 @@ import {
   type Firestore,
   type CollectionReference,
   type Query,
+  collection
 } from 'firebase/firestore';
 import type {Document} from '@/lib/data';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { useFirestore } from '..';
 
-function useCollection<T>(q: Query<T> | null): {
+function useCollection<T>(pathOrQuery: string | Query<T> | null): {
   data: Document<T>[];
   loading: boolean;
   error: Error | null;
   setData: React.Dispatch<React.SetStateAction<Document<T>[]>>;
 };
-function useCollection<T>(q: Query<T> | null) {
+function useCollection<T>(pathOrQuery: string | Query<T> | null) {
+  const firestore = useFirestore();
   const [data, setData] = useState<Document<T>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  const memoizedQuery = useMemo(() => {
+    if (!firestore || !pathOrQuery) return null;
+    if (typeof pathOrQuery === 'string') {
+      return collection(firestore, pathOrQuery) as Query<T>;
+    }
+    return pathOrQuery;
+  }, [firestore, pathOrQuery]);
+
   useEffect(() => {
-    if (!q) {
+    if (!memoizedQuery) {
       setLoading(false);
       setData([]); // Clear data when query is null
       return;
@@ -33,7 +44,7 @@ function useCollection<T>(q: Query<T> | null) {
 
     setLoading(true);
     const unsubscribe = onSnapshot(
-      q,
+      memoizedQuery,
       snapshot => {
         const docs = snapshot.docs.map(doc => ({
           id: doc.id,
@@ -44,7 +55,7 @@ function useCollection<T>(q: Query<T> | null) {
       },
       async (serverError) => {
         const permissionError = new FirestorePermissionError({
-            path: (q as Query).path,
+            path: (memoizedQuery as Query).path,
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -54,7 +65,7 @@ function useCollection<T>(q: Query<T> | null) {
     );
 
     return () => unsubscribe();
-  }, [q]);
+  }, [memoizedQuery]);
 
   return {data, loading, error, setData};
 }

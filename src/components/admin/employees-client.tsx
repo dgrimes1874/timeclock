@@ -35,8 +35,7 @@ const rulesSchema = z.object({
 
 export default function EmployeesClient() {
   const firestore = useFirestore();
-  const employeesCollection = useMemo(() => firestore ? collection(firestore, 'employees') : null, [firestore]);
-  const { data: employees = [], loading: employeesLoading } = useCollection<Employee>(employeesCollection);
+  const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
 
   const [selectedEmployee, setSelectedEmployee] = useState<Document<Employee> | null>(null);
   const [isFormOpen, setFormOpen] = useState(false);
@@ -85,7 +84,7 @@ export default function EmployeesClient() {
           errorEmitter.emit('permission-error', permissionError);
         });
     } else {
-      if (!employeesCollection) return;
+      const employeesCollection = collection(firestore, 'employees');
       const dataToCreate = { ...employeeData, rules: 'Standard pay rules apply.' };
       addDoc(employeesCollection, dataToCreate)
         .then(() => {
