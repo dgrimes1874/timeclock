@@ -42,7 +42,7 @@ export function calculatePay(employee: Employee, entry: TimeEntry): { totalPay: 
   const wasLate = isLate(entry.clockIn);
   const hours = calculateHoursWorked(entry.clockIn, entry.clockOut);
   const basePay = hours * employee.hourlyRate;
-  const bonus = wasLate ? 0 : employee.onTimeBonus;
+  const bonus = wasLate ? 0 : hours * employee.onTimeBonus;
 
   const totalPay = basePay + bonus;
 
