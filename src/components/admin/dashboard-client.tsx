@@ -20,9 +20,10 @@ interface CombinedEntry {
 export default function DashboardClient() {
   const [employees] = useState<Employee[]>(initialEmployees);
   const [timeEntries] = useState<TimeEntry[]>(initialTimeEntries);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
   useEffect(() => {
+    setCurrentTime(new Date());
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
@@ -94,8 +95,8 @@ export default function DashboardClient() {
                 <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-                <div className="text-2xl font-bold">{format(currentTime, 'HH:mm:ss')}</div>
-                <p className="text-xs text-muted-foreground">{format(currentTime, 'eeee, MMMM do')}</p>
+                <div className="text-2xl font-bold">{currentTime ? format(currentTime, 'HH:mm:ss') : '--:--:--'}</div>
+                <p className="text-xs text-muted-foreground">{currentTime ? format(currentTime, 'eeee, MMMM do') : 'Loading...'}</p>
             </CardContent>
         </Card>
       </div>
