@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Represents a crew member in the payroll system.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The full name of the employee."
+        },
+        "hourlyRate": {
+          "type": "number",
+          "description": "The base hourly rate for the employee."
+        },
+        "onTimeBonus": {
+          "type": "number",
+          "description": "The hourly bonus rate if the employee clocks in on time."
+        },
+        "rules": {
+          "type": "string",
+          "description": "Custom payroll rules for the employee."
+        }
+      },
+      "required": ["name", "hourlyRate", "onTimeBonus", "rules"]
+    },
+    "TimeEntry": {
+      "title": "TimeEntry",
+      "description": "Represents a single clock-in/clock-out event for an employee.",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "description": "The ID of the employee this time entry belongs to."
+        },
+        "clockIn": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the employee clocked in."
+        },
+        "clockOut": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the employee clocked out."
+        },
+        "date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The date of the time entry."
+        }
+      },
+      "required": ["employeeId", "date"]
+    }
+  },
+  "auth": {
+    "providers": []
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Stores information about individual employees."
+    },
+    "/timeEntries/{timeEntryId}": {
+      "schema": { "$ref": "#/entities/TimeEntry" },
+      "description": "Stores all time clock-in and clock-out entries."
+    }
+  }
+}

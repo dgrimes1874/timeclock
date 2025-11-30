@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { employees as initialEmployees, timeEntries as initialTimeEntries } from '@/lib/data';
-import type { Employee, TimeEntry } from '@/lib/data';
+import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -23,10 +22,12 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useCollection } from '@/firebase';
+import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc } from 'firebase/firestore';
 
 export default function ClockClient() {
-  const [employees] = useState<Employee[]>(initialEmployees);
-  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(initialTimeEntries);
+  const { data: employees = [], firestore } = useCollection<Employee>('employees');
+  const [timeEntries, setTimeEntries] = useState<Document<TimeEntry>[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const { toast } = useToast();
@@ -36,65 +37,81 @@ export default function ClockClient() {
   const [isDialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-    setCurrentTime(new Date());
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const fetchTimeEntries = async () => {
+      if (firestore && selectedEmployeeId) {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const startOfToday = new Date(todayStr);
+        const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
+
+        const q = query(
+          collection(firestore, 'timeEntries'),
+          where('employeeId', '==', selectedEmployeeId),
+          where('date', '>=', startOfToday),
+          where('date', '<', endOfToday)
+        );
+        const querySnapshot = await getDocs(q);
+        const entries: Document<TimeEntry>[] = [];
+        querySnapshot.forEach(doc => {
+          entries.push({ id: doc.id, ...doc.data() } as Document<TimeEntry>);
+        });
+        setTimeEntries(entries);
+      }
+    };
+    fetchTimeEntries();
+  }, [selectedEmployeeId, firestore]);
+
   const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
-  
-  const todayEntryForSelected = selectedEmployeeId
-    ? timeEntries.find(entry =>
-        entry.employeeId === selectedEmployeeId &&
-        format(entry.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
-      )
-    : undefined;
+  const todayEntryForSelected = timeEntries[0];
 
   const status = todayEntryForSelected?.clockIn && !todayEntryForSelected?.clockOut
     ? 'Clocked In'
     : 'Clocked Out';
 
-  const handleClockAction = () => {
-    if (!selectedEmployeeId) {
+  const handleClockAction = async () => {
+    if (!selectedEmployeeId || !firestore) {
       toast({ variant: 'destructive', title: 'Error', description: 'Please select an employee first.' });
       return;
     }
     
     const now = new Date();
-    const todayStr = format(now, 'yyyy-MM-dd');
+    const nowTimestamp = Timestamp.fromDate(now);
 
-    setTimeEntries(prevEntries => {
-      const entryIndex = prevEntries.findIndex(e => e.employeeId === selectedEmployeeId && format(e.date, 'yyyy-MM-dd') === todayStr);
-
+    try {
       if (status === 'Clocked Out') { // Clocking In
-        if (entryIndex > -1) {
-          const newEntries = [...prevEntries];
-          newEntries[entryIndex] = { ...newEntries[entryIndex], clockIn: now, clockOut: null };
-          return newEntries;
-        } else {
-          // This case should be handled by the initial data, but as a fallback:
-           const newEntry: TimeEntry = { id: `t${Date.now()}`, employeeId: selectedEmployeeId, clockIn: now, clockOut: null, date: now };
-           return [...prevEntries, newEntry];
-        }
+        const newEntry: Omit<TimeEntry, 'id' | 'clockOut'> & { clockOut: null } = {
+          employeeId: selectedEmployeeId,
+          clockIn: nowTimestamp,
+          clockOut: null,
+          date: Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), now.getDate())),
+        };
+        const docRef = await addDoc(collection(firestore, 'timeEntries'), newEntry);
+        setTimeEntries([{ id: docRef.id, ...newEntry } as Document<TimeEntry>]);
       } else { // Clocking Out
-        if (entryIndex > -1) {
-          const newEntries = [...prevEntries];
-          newEntries[entryIndex] = { ...newEntries[entryIndex], clockOut: now };
-          return newEntries;
+        if (todayEntryForSelected) {
+          const entryRef = doc(firestore, 'timeEntries', todayEntryForSelected.id);
+          await updateDoc(entryRef, { clockOut: nowTimestamp });
+          setTimeEntries(prev => prev.map(e => e.id === todayEntryForSelected.id ? {...e, clockOut: nowTimestamp} : e));
         }
       }
-      return prevEntries;
-    });
 
-    const action = status === 'Clocked Out' ? 'Clocked In' : 'Clocked Out';
-    const description = action === 'Clocked In' && isLate(now)
-      ? 'You have been marked as late.'
-      : `You are now ${action.toLowerCase()}.`;
-      
-    toast({
-        title: `Successfully ${action}`,
-        description: `${format(now, 'HH:mm:ss')} - ${description}`
-    });
+      const action = status === 'Clocked Out' ? 'Clocked In' : 'Clocked Out';
+      const description = action === 'Clocked In' && isLate(now)
+        ? 'You have been marked as late.'
+        : `You are now ${action.toLowerCase()}.`;
+        
+      toast({
+          title: `Successfully ${action}`,
+          description: `${format(now, 'HH:mm:ss')} - ${description}`
+      });
+
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Firebase Error', description: error.message });
+    }
   };
   
   const handleAdminAccess = () => {
@@ -189,8 +206,8 @@ export default function ClockClient() {
                 </p>
                  {status === 'Clocked In' && todayEntryForSelected?.clockIn && (
                     <p className="text-sm text-muted-foreground">
-                        Clocked in at {format(todayEntryForSelected.clockIn, 'HH:mm')}
-                        {isLate(todayEntryForSelected.clockIn) && <span className="text-red-600 font-semibold"> (Late)</span>}
+                        Clocked in at {format(todayEntryForSelected.clockIn.toDate(), 'HH:mm')}
+                        {isLate(todayEntryForSelected.clockIn.toDate()) && <span className="text-red-600 font-semibold"> (Late)</span>}
                     </p>
                 )}
             </div>

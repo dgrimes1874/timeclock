@@ -1,4 +1,5 @@
 import ClockClient from "@/components/crew/clock-client";
+import { FirebaseClientProvider } from "@/firebase/client-provider";
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function CrewPage() {
-    return <ClockClient />;
+    return (
+      <FirebaseClientProvider>
+        <ClockClient />
+      </FirebaseClientProvider>
+    );
 }

@@ -1,7 +1,7 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { intervalToDuration, formatDuration, isAfter, set, startOfWeek, endOfWeek, eachDayOfInterval, addDays } from 'date-fns';
-import type { Employee, TimeEntry } from '@/lib/data';
+import { intervalToDuration, isAfter, set, startOfWeek, endOfWeek, eachDayOfInterval, addDays, format } from 'date-fns';
+import type { Employee, TimeEntry, Document } from '@/lib/data';
 
 
 export function cn(...inputs: ClassValue[]) {
@@ -34,13 +34,13 @@ export function formatHours(hours: number): string {
     return `${h}h ${m}m`;
 }
 
-export function calculatePay(employee: Employee, entry: TimeEntry): { totalPay: number; wasLate: boolean; hours: number; basePay: number; bonus: number; } {
+export function calculatePay(employee: Document<Employee>, entry: Document<TimeEntry>): { totalPay: number; wasLate: boolean; hours: number; basePay: number; bonus: number; } {
   if (!entry.clockIn) {
     return { totalPay: 0, wasLate: false, hours: 0, basePay: 0, bonus: 0 };
   }
   
-  const wasLate = isLate(entry.clockIn);
-  const hours = calculateHoursWorked(entry.clockIn, entry.clockOut);
+  const wasLate = isLate(entry.clockIn.toDate());
+  const hours = calculateHoursWorked(entry.clockIn.toDate(), entry.clockOut?.toDate() || null);
   const basePay = hours * employee.hourlyRate;
   const bonus = wasLate ? 0 : hours * employee.onTimeBonus;
 

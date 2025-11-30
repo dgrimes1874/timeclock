@@ -5,40 +5,47 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { employees as initialEmployees, timeEntries as initialTimeEntries } from '@/lib/data';
-import type { Employee, TimeEntry } from '@/lib/data';
+import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { Clock, CheckCircle, XCircle, AlertTriangle, Users } from 'lucide-react';
+import { useCollection } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
 
 interface CombinedEntry {
-  employee: Employee;
-  entry: TimeEntry | undefined;
+  employee: Document<Employee>;
+  entry: Document<TimeEntry> | undefined;
   status: 'Clocked In' | 'Clocked Out' | 'Late';
 }
 
 export default function DashboardClient() {
-  const [employees] = useState<Employee[]>(initialEmployees);
-  const [timeEntries] = useState<TimeEntry[]>(initialTimeEntries);
+  const { data: employees = [] } = useCollection<Employee>(collection(useCollection.firestore, 'employees'));
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  
+  const { data: timeEntries = [] } = useCollection<TimeEntry>(
+    query(
+      collection(useCollection.firestore, 'timeEntries'), 
+      where('date', '>=', new Date(todayStr)),
+      where('date', '<', new Date(new Date(todayStr).getTime() + 24 * 60 * 60 * 1000))
+    )
+  );
+
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
-    setCurrentTime(new Date());
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const todayEntries = timeEntries.filter(entry => format(entry.date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd'));
-
   const combinedData: CombinedEntry[] = employees.map(employee => {
-    const entry = todayEntries.find(e => e.employeeId === employee.id);
+    const entry = timeEntries.find(e => e.employeeId === employee.id);
     let status: CombinedEntry['status'] = 'Clocked Out';
     if (entry?.clockIn && !entry.clockOut) {
-      status = isLate(entry.clockIn) ? 'Late' : 'Clocked In';
+      status = isLate(entry.clockIn.toDate()) ? 'Late' : 'Clocked In';
     }
     return { employee, entry, status };
   });
@@ -109,10 +116,8 @@ export default function DashboardClient() {
 
       <Card>
         <CardHeader>
-            <div>
-                <CardTitle>Live Status Dashboard</CardTitle>
-                <CardDescription>Real-time clock-in/out status of all crew members for today.</CardDescription>
-            </div>
+          <CardTitle>Live Status Dashboard</CardTitle>
+          <CardDescription>Real-time clock-in/out status of all crew members for today.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -138,10 +143,10 @@ export default function DashboardClient() {
                   </TableCell>
                   <TableCell>{getStatusBadge(status)}</TableCell>
                   <TableCell>
-                    {entry?.clockIn ? format(entry.clockIn, 'HH:mm:ss') : '--:--:--'}
+                    {entry?.clockIn ? format(entry.clockIn.toDate(), 'HH:mm:ss') : '--:--:--'}
                   </TableCell>
                   <TableCell>
-                    {entry?.clockOut ? format(entry.clockOut, 'HH:mm:ss') : '--:--:--'}
+                    {entry?.clockOut ? format(entry.clockOut.toDate(), 'HH:mm:ss') : '--:--:--'}
                   </TableCell>
                 </TableRow>
               ))}

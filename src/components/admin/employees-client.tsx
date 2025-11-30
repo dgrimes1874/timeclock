@@ -10,19 +10,21 @@ import { Input } from '@/components/ui/input';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { employees as initialEmployees } from '@/lib/data';
-import type { Employee } from '@/lib/data';
+import type { Employee, Document } from '@/lib/data';
 import { formatCurrency } from '@/lib/utils';
 import { PlusCircle, Edit, Loader2 } from 'lucide-react';
 import { customizePayrollRules } from '@/ai/flows/customize-payroll-rules';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useCollection } from '@/firebase';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 
 const employeeSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(2, 'Name must be at least 2 characters.'),
   hourlyRate: z.coerce.number().min(0, 'Hourly rate must be a positive number.'),
   onTimeBonus: z.coerce.number().min(0, 'Bonus must be a positive number.'),
+  rules: z.string().optional(),
 });
 
 const rulesSchema = z.object({
@@ -30,8 +32,8 @@ const rulesSchema = z.object({
 });
 
 export default function EmployeesClient() {
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const { data: employees = [], firestore } = useCollection<Employee>('employees');
+  const [selectedEmployee, setSelectedEmployee] = useState<Document<Employee> | null>(null);
   const [isFormOpen, setFormOpen] = useState(false);
   const { toast } = useToast();
   
@@ -46,7 +48,7 @@ export default function EmployeesClient() {
     resolver: zodResolver(rulesSchema),
   });
 
-  const handleEdit = (employee: Employee) => {
+  const handleEdit = (employee: Document<Employee>) => {
     form.reset(employee);
     setSelectedEmployee(employee);
     setFormOpen(true);
@@ -58,16 +60,22 @@ export default function EmployeesClient() {
     setFormOpen(true);
   };
 
-  const onSubmit = (values: z.infer<typeof employeeSchema>) => {
-    if (selectedEmployee) {
-      setEmployees(employees.map(emp => emp.id === selectedEmployee.id ? { ...emp, ...values } : emp));
-      toast({ title: 'Success', description: 'Employee updated successfully.' });
-    } else {
-      const newEmployee = { ...values, id: (employees.length + 2).toString(), rules: 'Standard pay rules apply.' };
-      setEmployees([...employees, newEmployee]);
-      toast({ title: 'Success', description: 'Employee added successfully.' });
+  const onSubmit = async (values: z.infer<typeof employeeSchema>) => {
+    if (!firestore) return;
+    const { id, ...employeeData } = values;
+
+    try {
+      if (id) {
+        await updateDoc(doc(firestore, 'employees', id), employeeData);
+        toast({ title: 'Success', description: 'Employee updated successfully.' });
+      } else {
+        await addDoc(collection(firestore, 'employees'), { ...employeeData, rules: 'Standard pay rules apply.' });
+        toast({ title: 'Success', description: 'Employee added successfully.' });
+      }
+      setFormOpen(false);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
     }
-    setFormOpen(false);
   };
 
   const onRulesSubmit = async (values: z.infer<typeof rulesSchema>) => {
@@ -90,14 +98,18 @@ export default function EmployeesClient() {
     }
   };
   
-  const applyAdjustedRules = () => {
-    if (selectedEmployee && adjustedRules) {
-        setEmployees(employees.map(emp => 
-            emp.id === selectedEmployee.id ? { ...emp, rules: adjustedRules } : emp
-        ));
-        toast({ title: 'Rules Updated', description: `Payroll rules for ${selectedEmployee.name} have been updated.` });
-        setAdjustedRules(null);
-        rulesForm.reset();
+  const applyAdjustedRules = async () => {
+    if (selectedEmployee && adjustedRules && firestore) {
+        try {
+            await updateDoc(doc(firestore, 'employees', selectedEmployee.id), { rules: adjustedRules });
+            toast({ title: 'Rules Updated', description: `Payroll rules for ${selectedEmployee.name} have been updated.` });
+            setAdjustedRules(null);
+            rulesForm.reset();
+            // Refetch or update local state
+            setSelectedEmployee(prev => prev ? {...prev, rules: adjustedRules} : null);
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Error updating rules', description: error.message });
+        }
     }
   };
 
@@ -139,7 +151,7 @@ export default function EmployeesClient() {
                     )} />
                     <FormField control={form.control} name="onTimeBonus" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>On-Time Bonus ($)</FormLabel>
+                        <FormLabel>On-Time Bonus ($/hr)</FormLabel>
                         <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
@@ -168,7 +180,7 @@ export default function EmployeesClient() {
                   <TableCell>{formatCurrency(employee.hourlyRate)}</TableCell>
                   <TableCell>{formatCurrency(employee.onTimeBonus)}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(employee)}>
+                    <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleEdit(employee); }}>
                       <Edit className="h-4 w-4" />
                     </Button>
                   </TableCell>

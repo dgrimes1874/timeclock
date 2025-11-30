@@ -1,17 +1,18 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { employees as initialEmployees, timeEntries as initialTimeEntries } from '@/lib/data';
-import type { Employee, TimeEntry } from '@/lib/data';
+import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
-import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent, isLate } from '@/lib/utils';
+import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
 import { Download } from 'lucide-react';
+import { useCollection } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
 
 interface WeeklyReportData {
-    employee: Employee;
+    employee: Document<Employee>;
     dailyData: {
         [date: string]: {
             clockIn: Date | null;
@@ -29,16 +30,22 @@ interface WeeklyReportData {
 }
 
 export default function ReportsClient() {
-  const [employees] = useState<Employee[]>(initialEmployees);
-  const [timeEntries] = useState<TimeEntry[]>(initialTimeEntries);
+  const { data: employees = [] } = useCollection<Employee>('employees');
   
   const { start, end } = getWeekDateRange();
-  const weekDays = getWeekDays(start);
+
+  const { data: timeEntries = [] } = useCollection<TimeEntry>(
+    query(
+      collection(useCollection.firestore, 'timeEntries'),
+      where('date', '>=', start),
+      where('date', '<=', end)
+    )
+  );
 
   const weeklyReportData: WeeklyReportData[] = useMemo(() => {
     return employees.map(employee => {
         const employeeEntries = timeEntries.filter(
-            entry => entry.employeeId === employee.id && entry.clockIn && entry.clockOut && entry.date >= start && entry.date <= end
+            entry => entry.employeeId === employee.id && entry.clockIn && entry.clockOut
         );
 
         let totalRegularHours = 0;
@@ -47,14 +54,15 @@ export default function ReportsClient() {
         let totalBonusPay = 0;
 
         const dailyData: WeeklyReportData['dailyData'] = {};
+        const weekDays = getWeekDays(start);
 
         weekDays.forEach(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
-            const entryForDay = employeeEntries.find(e => format(e.date, 'yyyy-MM-dd') === dayStr);
+            const entryForDay = employeeEntries.find(e => format(e.date.toDate(), 'yyyy-MM-dd') === dayStr);
 
             if (entryForDay) {
                 const { wasLate, hours, basePay, bonus } = calculatePay(employee, entryForDay);
-                dailyData[dayStr] = { clockIn: entryForDay.clockIn, clockOut: entryForDay.clockOut, wasLate };
+                dailyData[dayStr] = { clockIn: entryForDay.clockIn!.toDate(), clockOut: entryForDay.clockOut!.toDate(), wasLate };
                 totalRegularHours += hours;
                 totalBasePay += basePay;
                 if (!wasLate) {
@@ -80,10 +88,10 @@ export default function ReportsClient() {
             }
         };
     });
-  }, [employees, timeEntries, start, end, weekDays]);
+  }, [employees, timeEntries, start]);
 
   const handleDownloadCsv = () => {
-    const csvContent = generateCsvContent(weeklyReportData, weekDays);
+    const csvContent = generateCsvContent(weeklyReportData, getWeekDays(start));
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     if (link.href) {
@@ -96,6 +104,8 @@ export default function ReportsClient() {
     link.click();
     document.body.removeChild(link);
   };
+
+  const weekDays = getWeekDays(start);
 
   return (
     <div className="grid gap-6">
