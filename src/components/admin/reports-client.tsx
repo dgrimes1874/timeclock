@@ -57,7 +57,7 @@ export default function ReportsClient() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const { start, end } = getWeekDateRange(currentDate);
 
-  const { data: timeEntries = [] } = useCollection<TimeEntry>(
+  const { data: timeEntries = [], setData: setTimeEntries } = useCollection<TimeEntry>(
     firestore ? query(
       collection(firestore, 'timeEntries'),
       where('date', '>=', start),
@@ -171,24 +171,35 @@ export default function ReportsClient() {
                  throw new Error('Invalid clock-out time format.');
             }
         }
+        
+        const clockInTimestamp = clockInDate ? Timestamp.fromDate(clockInDate) : null;
+        const clockOutTimestamp = clockOutDate ? Timestamp.fromDate(clockOutDate) : null;
 
         if (entry) { // Update existing entry
             const entryRef = doc(firestore, 'timeEntries', entry.id);
             const updatedData = {
-                clockIn: clockInDate ? Timestamp.fromDate(clockInDate) : null,
-                clockOut: clockOutDate ? Timestamp.fromDate(clockOutDate) : null,
+                clockIn: clockInTimestamp,
+                clockOut: clockOutTimestamp,
             };
             await updateDoc(entryRef, updatedData);
+            
+            // Optimistically update local state for immediate UI feedback
+            setTimeEntries(prev => prev.map(e => e.id === entry.id ? {...e, ...updatedData} : e));
+
             toast({ title: 'Success', description: 'Time entry updated.' });
         } else { // Create new entry
             const collRef = collection(firestore, 'timeEntries');
-            const newEntry = {
+            const newEntryData: Omit<TimeEntry, 'id'> = {
                 employeeId: employee.id,
                 date: Timestamp.fromDate(date),
-                clockIn: clockInDate ? Timestamp.fromDate(clockInDate) : null,
-                clockOut: clockOutDate ? Timestamp.fromDate(clockOutDate) : null,
+                clockIn: clockInTimestamp,
+                clockOut: clockOutTimestamp,
             };
-            await addDoc(collRef, newEntry);
+            const newDocRef = await addDoc(collRef, newEntryData);
+            
+            // Optimistically update local state for immediate UI feedback
+            setTimeEntries(prev => [...prev, { id: newDocRef.id, ...newEntryData }]);
+            
             toast({ title: 'Success', description: 'Time entry created.' });
         }
         setDialogOpen(false);
@@ -207,10 +218,15 @@ export default function ReportsClient() {
       if (!editingEntry || !editingEntry.entry || !firestore) return;
       setIsSaving(true);
       
-      const entryRef = doc(firestore, 'timeEntries', editingEntry.entry.id);
+      const entryId = editingEntry.entry.id;
+      const entryRef = doc(firestore, 'timeEntries', entryId);
       
       try {
         await deleteDoc(entryRef);
+
+        // Optimistically update local state
+        setTimeEntries(prev => prev.filter(e => e.id !== entryId));
+
         toast({ title: 'Success', description: 'Time entry deleted.' });
         setDialogOpen(false);
       } catch (e: any) {

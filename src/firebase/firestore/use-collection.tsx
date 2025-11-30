@@ -19,8 +19,9 @@ function useCollection<T>(pathOrQuery: string | Query<T> | null): {
   data: Document<T>[];
   loading: boolean;
   error: Error | null;
+  setData: React.Dispatch<React.SetStateAction<Document<T>[]>>;
 };
-function useCollection<T>(pathOrQuery: string | Query<T> | null): {data: Document<T>[]; loading: boolean; error: Error | null} {
+function useCollection<T>(pathOrQuery: string | Query<T> | null) {
   const firestore = useFirestore();
   const [data, setData] = useState<Document<T>[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,9 +37,11 @@ function useCollection<T>(pathOrQuery: string | Query<T> | null): {data: Documen
   useEffect(() => {
     if (!memoizedQuery) {
       setLoading(false);
+      setData([]); // Clear data when query is null
       return;
     }
 
+    setLoading(true);
     const unsubscribe = onSnapshot(
       memoizedQuery,
       snapshot => {
@@ -51,7 +54,7 @@ function useCollection<T>(pathOrQuery: string | Query<T> | null): {data: Documen
       },
       async (serverError) => {
         const permissionError = new FirestorePermissionError({
-            path: memoizedQuery.path,
+            path: (memoizedQuery as Query).path,
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);
@@ -63,7 +66,7 @@ function useCollection<T>(pathOrQuery: string | Query<T> | null): {data: Documen
     return () => unsubscribe();
   }, [memoizedQuery]);
 
-  return {data, loading, error};
+  return {data, loading, error, setData};
 }
 
 export {useCollection};
