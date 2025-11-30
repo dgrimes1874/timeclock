@@ -10,7 +10,19 @@ import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, LogIn, LogOut, Timer } from 'lucide-react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 export default function ClockClient() {
   const [employees] = useState<Employee[]>(initialEmployees);
@@ -18,6 +30,10 @@ export default function ClockClient() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const { toast } = useToast();
+  const router = useRouter();
+
+  const [adminCode, setAdminCode] = useState('');
+  const [isDialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     setCurrentTime(new Date());
@@ -80,12 +96,58 @@ export default function ClockClient() {
         description: `${format(now, 'HH:mm:ss')} - ${description}`
     });
   };
+  
+  const handleAdminAccess = () => {
+    if (adminCode.toLowerCase() === 'pam') {
+      router.push('/');
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Incorrect Code',
+        description: 'The code you entered is incorrect. Please try again.',
+      });
+      setAdminCode('');
+    }
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-muted/40 p-4">
-       <Button asChild variant="ghost" className="absolute top-4 left-4">
-         <Link href="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Admin</Link>
-       </Button>
+       <Dialog open={isDialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger asChild>
+          <Button variant="ghost" className="absolute top-4 left-4">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Admin
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Admin Access</DialogTitle>
+            <DialogDescription>
+              Enter the passcode to access the admin dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="admin-code" className="text-right">
+                Passcode
+              </Label>
+              <Input
+                id="admin-code"
+                type="password"
+                value={adminCode}
+                onChange={(e) => setAdminCode(e.target.value)}
+                className="col-span-3"
+                onKeyDown={(e) => e.key === 'Enter' && handleAdminAccess()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button type="submit" onClick={handleAdminAccess}>Enter</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
