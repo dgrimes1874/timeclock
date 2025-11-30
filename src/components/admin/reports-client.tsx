@@ -1,22 +1,35 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import type { Employee, TimeEntry, Document } from '@/lib/data';
-import { format } from 'date-fns';
+import { format, parse, set } from 'date-fns';
 import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
-import { Download } from 'lucide-react';
+import { Download, Loader2, Trash2 } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, addDoc, updateDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 interface WeeklyReportData {
     employee: Document<Employee>;
     dailyData: {
         [date: string]: {
-            clockIn: Date | null;
-            clockOut: Date | null;
+            entry: Document<TimeEntry> | undefined;
             wasLate: boolean;
         };
     };
@@ -29,8 +42,15 @@ interface WeeklyReportData {
     };
 }
 
+type EditingEntry = {
+    employee: Document<Employee>;
+    entry: Document<TimeEntry> | undefined;
+    date: Date;
+};
+
 export default function ReportsClient() {
   const firestore = useFirestore();
+  const { toast } = useToast();
   const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
   
   const { start, end } = getWeekDateRange();
@@ -42,6 +62,12 @@ export default function ReportsClient() {
       where('date', '<=', end)
     )
   );
+
+  const [isDialogOpen, setDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
+  const [clockInTime, setClockInTime] = useState('');
+  const [clockOutTime, setClockOutTime] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const weeklyReportData: WeeklyReportData[] = useMemo(() => {
     return employees.map(employee => {
@@ -60,18 +86,20 @@ export default function ReportsClient() {
         weekDays.forEach(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
             const entryForDay = employeeEntries.find(e => format(e.date.toDate(), 'yyyy-MM-dd') === dayStr);
+            let wasLate = false;
 
             if (entryForDay) {
-                const { wasLate, hours, basePay, bonus } = calculatePay(employee, entryForDay);
-                dailyData[dayStr] = { clockIn: entryForDay.clockIn!.toDate(), clockOut: entryForDay.clockOut!.toDate(), wasLate };
-                totalRegularHours += hours;
-                totalBasePay += basePay;
+                const payDetails = calculatePay(employee, entryForDay);
+                wasLate = payDetails.wasLate;
+                dailyData[dayStr] = { entry: entryForDay, wasLate };
+                totalRegularHours += payDetails.hours;
+                totalBasePay += payDetails.basePay;
                 if (!wasLate) {
-                    totalBonusHours += hours;
-                    totalBonusPay += bonus;
+                    totalBonusHours += payDetails.hours;
+                    totalBonusPay += payDetails.bonus;
                 }
             } else {
-                dailyData[dayStr] = { clockIn: null, clockOut: null, wasLate: false };
+                dailyData[dayStr] = { entry: undefined, wasLate: false };
             }
         });
         
@@ -90,6 +118,75 @@ export default function ReportsClient() {
         };
     });
   }, [employees, timeEntries, start]);
+  
+  const handleCellClick = (employee: Document<Employee>, date: Date, entry: Document<TimeEntry> | undefined) => {
+    setEditingEntry({ employee, date, entry });
+    setClockInTime(entry?.clockIn ? format(entry.clockIn.toDate(), 'HH:mm') : '');
+    setClockOutTime(entry?.clockOut ? format(entry.clockOut.toDate(), 'HH:mm') : '');
+    setDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!editingEntry || !firestore) return;
+    setIsSaving(true);
+    
+    const { employee, date, entry } = editingEntry;
+
+    try {
+        const clockInDate = clockInTime ? parse(clockInTime, 'HH:mm', date) : null;
+        const clockOutDate = clockOutTime ? parse(clockOutTime, 'HH:mm', date) : null;
+
+        if (entry) { // Update existing entry
+            const entryRef = doc(firestore, 'timeEntries', entry.id);
+            const updatedData = {
+                clockIn: clockInDate ? Timestamp.fromDate(clockInDate) : null,
+                clockOut: clockOutDate ? Timestamp.fromDate(clockOutDate) : null,
+            };
+            await updateDoc(entryRef, updatedData);
+            toast({ title: 'Success', description: 'Time entry updated.' });
+        } else { // Create new entry
+            const collRef = collection(firestore, 'timeEntries');
+            const newEntry = {
+                employeeId: employee.id,
+                date: Timestamp.fromDate(date),
+                clockIn: clockInDate ? Timestamp.fromDate(clockInDate) : null,
+                clockOut: clockOutDate ? Timestamp.fromDate(clockOutDate) : null,
+            };
+            await addDoc(collRef, newEntry);
+            toast({ title: 'Success', description: 'Time entry created.' });
+        }
+        setDialogOpen(false);
+    } catch (e: any) {
+        if (e instanceof FirestorePermissionError) {
+          errorEmitter.emit('permission-error', e);
+        } else {
+          toast({ variant: 'destructive', title: 'Error', description: 'Could not save the entry. Please check the time format (HH:mm).' });
+        }
+    } finally {
+        setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+      if (!editingEntry || !editingEntry.entry || !firestore) return;
+      setIsSaving(true);
+      
+      const entryRef = doc(firestore, 'timeEntries', editingEntry.entry.id);
+      
+      try {
+        await deleteDoc(entryRef);
+        toast({ title: 'Success', description: 'Time entry deleted.' });
+        setDialogOpen(false);
+      } catch (e: any) {
+          if (e instanceof FirestorePermissionError) {
+            errorEmitter.emit('permission-error', e);
+          } else {
+            toast({ variant: 'destructive', title: 'Error', description: 'Could not delete the entry.' });
+          }
+      } finally {
+        setIsSaving(false);
+      }
+  };
 
   const handleDownloadCsv = () => {
     const csvContent = generateCsvContent(weeklyReportData, getWeekDays(start));
@@ -109,77 +206,138 @@ export default function ReportsClient() {
   const weekDays = getWeekDays(start);
 
   return (
-    <div className="grid gap-6">
-        <Card>
-            <CardHeader>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <CardTitle>Detailed Weekly Payroll Report</CardTitle>
-                        <CardDescription>
-                            Report for the week of {format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}.
-                            The week starts on Saturday and ends on Friday.
-                        </CardDescription>
+    <>
+      <div className="grid gap-6">
+          <Card>
+              <CardHeader>
+                  <div className="flex justify-between items-start">
+                      <div>
+                          <CardTitle>Detailed Weekly Payroll Report</CardTitle>
+                          <CardDescription>
+                              Report for the week of {format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}.
+                              The week starts on Saturday and ends on Friday. Click a cell to edit.
+                          </CardDescription>
+                      </div>
+                      <Button onClick={handleDownloadCsv}>
+                          <Download className="mr-2 h-4 w-4" />
+                          Download CSV
+                      </Button>
+                  </div>
+              </CardHeader>
+              <CardContent>
+                  <div className="overflow-x-auto">
+                      <Table>
+                          <TableHeader>
+                              <TableRow>
+                                  <TableHead rowSpan={2} className="sticky left-0 bg-card z-10">Employee</TableHead>
+                                  {weekDays.map(day => (
+                                      <TableHead key={format(day, 'T')} className="text-center min-w-[120px]">{format(day, 'EEE')}</TableHead>
+                                  ))}
+                                  <TableHead colSpan={2} className="text-center">Regular Pay</TableHead>
+                                  <TableHead colSpan={2} className="text-center">Bonus Pay</TableHead>
+                                  <TableHead rowSpan={2} className="text-right">Total Payroll</TableHead>
+                              </TableRow>
+                              <TableRow>
+                                  {weekDays.map(day => (
+                                      <TableHead key={`${format(day, 'T')}-sub`} className="text-center text-xs font-normal text-muted-foreground p-1">In / Out</TableHead>
+                                  ))}
+                                  <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Hours</TableHead>
+                                  <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Amount</TableHead>
+                                  <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Hours</TableHead>
+                                  <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Amount</TableHead>
+                              </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                              {weeklyReportData.map(({ employee, dailyData, summary }) => (
+                                  <React.Fragment key={employee.id}>
+                                      <TableRow className="bg-muted/20">
+                                          <TableCell className="font-semibold sticky left-0 bg-muted/20 z-10">{employee.name}</TableCell>
+                                          {weekDays.map(day => {
+                                              const dayStr = format(day, 'yyyy-MM-dd');
+                                              const dayData = dailyData[dayStr];
+                                              return (
+                                                  <TableCell key={dayStr} className="text-center p-0">
+                                                      <button 
+                                                        onClick={() => handleCellClick(employee, day, dayData?.entry)}
+                                                        className={`w-full h-full p-2 text-center rounded-sm hover:bg-accent hover:text-accent-foreground focus:relative focus:z-20 focus:outline-none focus:ring-2 focus:ring-ring ${dayData?.wasLate ? 'text-red-600' : ''}`}
+                                                      >
+                                                          {dayData?.entry?.clockIn && dayData?.entry?.clockOut ? (
+                                                              <div>
+                                                                  {format(dayData.entry.clockIn.toDate(), 'HH:mm')} / {format(dayData.entry.clockOut.toDate(), 'HH:mm')}
+                                                              </div>
+                                                          ) : '--'}
+                                                      </button>
+                                                  </TableCell>
+                                              );
+                                          })}
+                                          <TableCell className="text-center">{summary.totalRegularHours.toFixed(2)}</TableCell>
+                                          <TableCell className="text-center">{formatCurrency(summary.totalBasePay)}</TableCell>
+                                          <TableCell className="text-center">{summary.totalBonusHours.toFixed(2)}</TableCell>
+                                          <TableCell className="text-center">{formatCurrency(summary.totalBonusPay)}</TableCell>
+                                          <TableCell className="text-right font-bold">{formatCurrency(summary.totalPayroll)}</TableCell>
+                                      </TableRow>
+                                  </React.Fragment>
+                              ))}
+                          </TableBody>
+                      </Table>
+                  </div>
+              </CardContent>
+          </Card>
+      </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+            {editingEntry && (
+              <>
+                <DialogHeader>
+                    <DialogTitle>Edit Time for {editingEntry.employee.name}</DialogTitle>
+                    <DialogDescription>
+                        {format(editingEntry.date, 'eeee, MMMM do yyyy')}
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="clockIn" className="text-right">Clock In</Label>
+                        <Input
+                            id="clockIn"
+                            value={clockInTime}
+                            onChange={(e) => setClockInTime(e.target.value)}
+                            className="col-span-3"
+                            placeholder="HH:mm (24-hour)"
+                        />
                     </div>
-                    <Button onClick={handleDownloadCsv}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Download CSV
-                    </Button>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="clockOut" className="text-right">Clock Out</Label>
+                        <Input
+                            id="clockOut"
+                            value={clockOutTime}
+                            onChange={(e) => setClockOutTime(e.target.value)}
+                            className="col-span-3"
+                            placeholder="HH:mm (24-hour)"
+                        />
+                    </div>
                 </div>
-            </CardHeader>
-            <CardContent>
-                <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead rowSpan={2} className="sticky left-0 bg-card z-10">Employee</TableHead>
-                                {weekDays.map(day => (
-                                    <TableHead key={format(day, 'T')} className="text-center min-w-[120px]">{format(day, 'EEE')}</TableHead>
-                                ))}
-                                <TableHead colSpan={2} className="text-center">Regular Pay</TableHead>
-                                <TableHead colSpan={2} className="text-center">Bonus Pay</TableHead>
-                                <TableHead rowSpan={2} className="text-right">Total Payroll</TableHead>
-                            </TableRow>
-                            <TableRow>
-                                {weekDays.map(day => (
-                                    <TableHead key={`${format(day, 'T')}-sub`} className="text-center text-xs font-normal text-muted-foreground p-1">In / Out</TableHead>
-                                ))}
-                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Hours</TableHead>
-                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Amount</TableHead>
-                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Hours</TableHead>
-                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Amount</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {weeklyReportData.map(({ employee, dailyData, summary }) => (
-                                <React.Fragment key={employee.id}>
-                                    <TableRow className="bg-muted/20">
-                                        <TableCell className="font-semibold sticky left-0 bg-muted/20 z-10">{employee.name}</TableCell>
-                                        {weekDays.map(day => {
-                                            const dayStr = format(day, 'yyyy-MM-dd');
-                                            const dayData = dailyData[dayStr];
-                                            return (
-                                                <TableCell key={dayStr} className="text-center">
-                                                    {dayData.clockIn && dayData.clockOut ? (
-                                                        <div className={dayData.wasLate ? 'text-red-600' : ''}>
-                                                            {format(dayData.clockIn, 'HH:mm')} / {format(dayData.clockOut, 'HH:mm')}
-                                                        </div>
-                                                    ) : '--'}
-                                                </TableCell>
-                                            );
-                                        })}
-                                        <TableCell className="text-center">{summary.totalRegularHours.toFixed(2)}</TableCell>
-                                        <TableCell className="text-center">{formatCurrency(summary.totalBasePay)}</TableCell>
-                                        <TableCell className="text-center">{summary.totalBonusHours.toFixed(2)}</TableCell>
-                                        <TableCell className="text-center">{formatCurrency(summary.totalBonusPay)}</TableCell>
-                                        <TableCell className="text-right font-bold">{formatCurrency(summary.totalPayroll)}</TableCell>
-                                    </TableRow>
-                                </React.Fragment>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </div>
-            </CardContent>
-        </Card>
-    </div>
+                <DialogFooter className="justify-between sm:justify-between">
+                    <div>
+                        {editingEntry.entry && (
+                            <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>
+                                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                                Delete
+                            </Button>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                      <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                      <Button onClick={handleSave} disabled={isSaving}>
+                          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Save
+                      </Button>
+                    </div>
+                </DialogFooter>
+              </>
+            )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
