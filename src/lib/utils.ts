@@ -22,7 +22,9 @@ export function isLate(clockInTime: Date): boolean {
 
 export function calculateHoursWorked(clockIn: Date | null, clockOut: Date | null): number {
   if (!clockIn || !clockOut) return 0;
-  const duration = intervalToDuration({ start: clockIn, end: clockOut });
+  // If clock out is before clock in, it's the next day
+  const effectiveClockOut = isAfter(clockOut, clockIn) ? clockOut : addDays(clockOut, 1);
+  const duration = intervalToDuration({ start: clockIn, end: effectiveClockOut });
   const hours = (duration.hours ?? 0) + ((duration.minutes ?? 0) / 60);
   return parseFloat(hours.toFixed(2));
 }
@@ -75,12 +77,14 @@ export function generateCsvContent(reportData: any[], weekDays: Date[]): string 
         const row = [
             `"${data.employee.name}"`,
             ...weekDays.map(day => {
-                const dayEntry = data.dailyData[format(day, 'yyyy-MM-dd')];
-                return dayEntry?.clockIn ? format(dayEntry.clockIn, 'HH:mm') : '';
+                const dayStr = format(day, 'yyyy-MM-dd');
+                const dayEntry = data.dailyData[dayStr]?.entry;
+                return dayEntry?.clockIn ? format(dayEntry.clockIn.toDate(), 'h:mm aa') : '';
             }),
             ...weekDays.map(day => {
-                const dayEntry = data.dailyData[format(day, 'yyyy-MM-dd')];
-                return dayEntry?.clockOut ? format(dayEntry.clockOut, 'HH:mm') : '';
+                const dayStr = format(day, 'yyyy-MM-dd');
+                const dayEntry = data.dailyData[dayStr]?.entry;
+                return dayEntry?.clockOut ? format(dayEntry.clockOut.toDate(), 'h:mm aa') : '';
             }),
             data.summary.totalRegularHours.toFixed(2),
             formatCurrency(data.summary.totalBasePay),

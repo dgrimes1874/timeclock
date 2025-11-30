@@ -109,7 +109,7 @@ export default function ClockClient() {
             setTimeEntries([{ id: docRef.id, ...newEntry } as Document<TimeEntry>]);
             toast({
                 title: `Successfully Clocked In`,
-                description: `${format(now, 'HH:mm:ss')} - ${isLate(now) ? 'You have been marked as late.' : 'You are now clocked in.'}`
+                description: `${format(now, 'h:mm:ss aa')} - ${isLate(now) ? 'You have been marked as late.' : 'You are now clocked in.'}`
             });
         })
         .catch(async (serverError) => {
@@ -132,7 +132,7 @@ export default function ClockClient() {
                 setTimeEntries(prev => prev.map(e => e.id === todayEntryForSelected.id ? {...e, clockOut: nowTimestamp} : e));
                 toast({
                     title: `Successfully Clocked Out`,
-                    description: `${format(now, 'HH:mm:ss')} - You are now clocked out.`
+                    description: `${format(now, 'h:mm:ss aa')} - You are now clocked out.`
                 });
             })
             .catch(async (serverError) => {
@@ -231,7 +231,7 @@ export default function ClockClient() {
           <div className="text-center bg-primary text-primary-foreground rounded-lg p-6">
             <p className="text-lg font-medium">Current Time</p>
             <p className="text-6xl font-bold font-mono tracking-tighter">
-                {currentTime ? format(currentTime, 'HH:mm:ss') : '--:--:--'}
+                {currentTime ? format(currentTime, 'h:mm:ss') : '--:--:--'}<span className="text-3xl align-top">{currentTime ? format(currentTime, 'aa') : ''}</span>
             </p>
             <p className="text-muted-foreground text-primary-foreground/70">{currentTime ? format(currentTime, 'eeee, MMMM d') : ''}</p>
           </div>
@@ -248,7 +248,7 @@ export default function ClockClient() {
                         </p>
                         {status === 'Clocked In' && todayEntryForSelected?.clockIn && (
                             <p className="text-sm text-muted-foreground">
-                                Clocked in at {format(todayEntryForSelected.clockIn.toDate(), 'HH:mm')}
+                                Clocked in at {format(todayEntryForSelected.clockIn.toDate(), 'h:mm aa')}
                                 {isLate(todayEntryForSelected.clockIn.toDate()) && <span className="text-red-600 font-semibold"> (Late)</span>}
                             </p>
                         )}

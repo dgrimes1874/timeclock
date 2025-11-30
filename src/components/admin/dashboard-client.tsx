@@ -109,7 +109,7 @@ export default function DashboardClient() {
                 <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-                <div className="text-2xl font-bold">{currentTime ? format(currentTime, 'HH:mm:ss') : '--:--:--'}</div>
+                <div className="text-2xl font-bold">{currentTime ? format(currentTime, 'h:mm:ss aa') : '--:--:--'}</div>
                 <p className="text-xs text-muted-foreground">{currentTime ? format(currentTime, 'eeee, MMMM do') : 'Loading...'}</p>
             </CardContent>
         </Card>
@@ -144,10 +144,10 @@ export default function DashboardClient() {
                   </TableCell>
                   <TableCell>{getStatusBadge(status)}</TableCell>
                   <TableCell>
-                    {entry?.clockIn ? format(entry.clockIn.toDate(), 'HH:mm:ss') : '--:--:--'}
+                    {entry?.clockIn ? format(entry.clockIn.toDate(), 'h:mm:ss aa') : '--:--:--'}
                   </TableCell>
                   <TableCell>
-                    {entry?.clockOut ? format(entry.clockOut.toDate(), 'HH:mm:ss') : '--:--:--'}
+                    {entry?.clockOut ? format(entry.clockOut.toDate(), 'h:mm:ss aa') : '--:--:--'}
                   </TableCell>
                 </TableRow>
               ))}

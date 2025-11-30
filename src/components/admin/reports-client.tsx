@@ -16,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { Employee, TimeEntry, Document } from '@/lib/data';
-import { format, parse, set, addDays, subDays } from 'date-fns';
+import { format, parse, set, addDays, subDays, getHours } from 'date-fns';
 import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
 import { Download, Loader2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
@@ -24,6 +24,7 @@ import { collection, query, where, addDoc, updateDoc, deleteDoc, doc, Timestamp 
 import { useToast } from '@/hooks/use-toast';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface WeeklyReportData {
     employee: Document<Employee>;
@@ -68,6 +69,7 @@ export default function ReportsClient() {
   const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
   const [clockInTime, setClockInTime] = useState('');
   const [clockOutTime, setClockOutTime] = useState('');
+  const [clockOutPeriod, setClockOutPeriod] = useState<'am' | 'pm'>('pm');
   const [isSaving, setIsSaving] = useState(false);
 
   const weeklyReportData: WeeklyReportData[] = useMemo(() => {
@@ -123,8 +125,15 @@ export default function ReportsClient() {
   
   const handleCellClick = (employee: Document<Employee>, date: Date, entry: Document<TimeEntry> | undefined) => {
     setEditingEntry({ employee, date, entry });
-    setClockInTime(entry?.clockIn ? format(entry.clockIn.toDate(), 'HH:mm') : '');
-    setClockOutTime(entry?.clockOut ? format(entry.clockOut.toDate(), 'HH:mm') : '');
+    setClockInTime(entry?.clockIn ? format(entry.clockIn.toDate(), 'h:mm') : '');
+    if (entry?.clockOut) {
+        const clockOutDate = entry.clockOut.toDate();
+        setClockOutTime(format(clockOutDate, 'h:mm'));
+        setClockOutPeriod(getHours(clockOutDate) >= 12 ? 'pm' : 'am');
+    } else {
+        setClockOutTime('');
+        setClockOutPeriod('pm');
+    }
     setDialogOpen(true);
   };
 
@@ -135,8 +144,33 @@ export default function ReportsClient() {
     const { employee, date, entry } = editingEntry;
 
     try {
-        const clockInDate = clockInTime ? set(date, { hours: parseInt(clockInTime.split(':')[0]), minutes: parseInt(clockInTime.split(':')[1])}) : null;
-        const clockOutDate = clockOutTime ? set(date, { hours: parseInt(clockOutTime.split(':')[0]), minutes: parseInt(clockOutTime.split(':')[1])}) : null;
+        let clockInDate: Date | null = null;
+        if (clockInTime) {
+            const [hour, minute] = clockInTime.split(':').map(Number);
+            if (hour >= 1 && hour <= 12 && minute >= 0 && minute <= 59) {
+                let hours = hour;
+                if (hour === 12) hours = 0; // 12 AM is 0 hours
+                clockInDate = set(date, { hours, minutes: minute });
+            } else {
+                throw new Error('Invalid clock-in time format.');
+            }
+        }
+
+        let clockOutDate: Date | null = null;
+        if (clockOutTime) {
+            const [hour, minute] = clockOutTime.split(':').map(Number);
+             if (hour >= 1 && hour <= 12 && minute >= 0 && minute <= 59) {
+                let hours = hour;
+                if (clockOutPeriod === 'pm' && hour < 12) {
+                    hours += 12;
+                } else if (clockOutPeriod === 'am' && hour === 12) { // 12 AM
+                    hours = 0;
+                }
+                clockOutDate = set(date, { hours, minutes: minute });
+            } else {
+                 throw new Error('Invalid clock-out time format.');
+            }
+        }
 
         if (entry) { // Update existing entry
             const entryRef = doc(firestore, 'timeEntries', entry.id);
@@ -162,7 +196,7 @@ export default function ReportsClient() {
         if (e instanceof FirestorePermissionError) {
           errorEmitter.emit('permission-error', e);
         } else {
-          toast({ variant: 'destructive', title: 'Error', description: 'Could not save the entry. Please check the time format (HH:mm).' });
+          toast({ variant: 'destructive', title: 'Error', description: e.message || 'Could not save the entry. Please check the time format (h:mm).' });
         }
     } finally {
         setIsSaving(false);
@@ -277,7 +311,7 @@ export default function ReportsClient() {
                                                       >
                                                           {dayData?.entry?.clockIn && dayData?.entry?.clockOut ? (
                                                               <div>
-                                                                  {format(dayData.entry.clockIn.toDate(), 'HH:mm')} / {format(dayData.entry.clockOut.toDate(), 'HH:mm')}
+                                                                  {format(dayData.entry.clockIn.toDate(), 'h:mm aa')} / {format(dayData.entry.clockOut.toDate(), 'h:mm aa')}
                                                               </div>
                                                           ) : '--'}
                                                       </button>
@@ -311,13 +345,13 @@ export default function ReportsClient() {
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="clockIn" className="text-right">Clock In</Label>
+                        <Label htmlFor="clockIn" className="text-right">Clock In (AM)</Label>
                         <Input
                             id="clockIn"
                             value={clockInTime}
                             onChange={(e) => setClockInTime(e.target.value)}
                             className="col-span-3"
-                            placeholder="HH:mm (24-hour)"
+                            placeholder="h:mm (12-hour)"
                         />
                     </div>
                     <div className="grid grid-cols-4 items-center gap-4">
@@ -326,9 +360,18 @@ export default function ReportsClient() {
                             id="clockOut"
                             value={clockOutTime}
                             onChange={(e) => setClockOutTime(e.target.value)}
-                            className="col-span-3"
-                            placeholder="HH:mm (24-hour)"
+                            className="col-span-2"
+                            placeholder="h:mm (12-hour)"
                         />
+                         <Select value={clockOutPeriod} onValueChange={(v) => setClockOutPeriod(v as 'am' | 'pm')}>
+                            <SelectTrigger className="col-span-1">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="am">AM</SelectItem>
+                                <SelectItem value="pm">PM</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
                 <DialogFooter className="justify-between sm:justify-between">
