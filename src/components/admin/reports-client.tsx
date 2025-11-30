@@ -16,9 +16,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { Employee, TimeEntry, Document } from '@/lib/data';
-import { format, parse, set } from 'date-fns';
+import { format, parse, set, addDays, subDays } from 'date-fns';
 import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
-import { Download, Loader2, Trash2 } from 'lucide-react';
+import { Download, Loader2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, addDoc, updateDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -53,14 +53,15 @@ export default function ReportsClient() {
   const { toast } = useToast();
   const { data: employees = [] } = useCollection<Employee>(collection(firestore, 'employees'));
   
-  const { start, end } = getWeekDateRange();
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const { start, end } = getWeekDateRange(currentDate);
 
   const { data: timeEntries = [] } = useCollection<TimeEntry>(
-    query(
+    firestore ? query(
       collection(firestore, 'timeEntries'),
       where('date', '>=', start),
       where('date', '<=', end)
-    )
+    ) : null
   );
 
   const [isDialogOpen, setDialogOpen] = useState(false);
@@ -70,6 +71,7 @@ export default function ReportsClient() {
   const [isSaving, setIsSaving] = useState(false);
 
   const weeklyReportData: WeeklyReportData[] = useMemo(() => {
+    if (!employees.length) return [];
     return employees.map(employee => {
         const employeeEntries = timeEntries.filter(
             entry => entry.employeeId === employee.id && entry.clockIn && entry.clockOut
@@ -133,8 +135,8 @@ export default function ReportsClient() {
     const { employee, date, entry } = editingEntry;
 
     try {
-        const clockInDate = clockInTime ? parse(clockInTime, 'HH:mm', date) : null;
-        const clockOutDate = clockOutTime ? parse(clockOutTime, 'HH:mm', date) : null;
+        const clockInDate = clockInTime ? set(date, { hours: parseInt(clockInTime.split(':')[0]), minutes: parseInt(clockInTime.split(':')[1])}) : null;
+        const clockOutDate = clockOutTime ? set(date, { hours: parseInt(clockOutTime.split(':')[0]), minutes: parseInt(clockOutTime.split(':')[1])}) : null;
 
         if (entry) { // Update existing entry
             const entryRef = doc(firestore, 'timeEntries', entry.id);
@@ -205,23 +207,35 @@ export default function ReportsClient() {
 
   const weekDays = getWeekDays(start);
 
+  const goToPreviousWeek = () => setCurrentDate(subDays(currentDate, 7));
+  const goToNextWeek = () => setCurrentDate(addDays(currentDate, 7));
+
+
   return (
     <>
       <div className="grid gap-6">
           <Card>
               <CardHeader>
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-center">
                       <div>
                           <CardTitle>Detailed Weekly Payroll Report</CardTitle>
                           <CardDescription>
                               Report for the week of {format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}.
-                              The week starts on Saturday and ends on Friday. Click a cell to edit.
+                              Click a cell to add or edit an entry.
                           </CardDescription>
                       </div>
-                      <Button onClick={handleDownloadCsv}>
-                          <Download className="mr-2 h-4 w-4" />
-                          Download CSV
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="icon" onClick={goToPreviousWeek}>
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="icon" onClick={goToNextWeek}>
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button onClick={handleDownloadCsv}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download CSV
+                        </Button>
+                      </div>
                   </div>
               </CardHeader>
               <CardContent>
