@@ -21,8 +21,10 @@ export default function DashboardClient() {
   const [employees] = useState<Employee[]>(initialEmployees);
   const [timeEntries] = useState<TimeEntry[]>(initialTimeEntries);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
+    setIsClient(true);
     setCurrentTime(new Date());
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -55,6 +57,10 @@ export default function DashboardClient() {
   };
   
   const activeEmployees = combinedData.filter(d => d.status !== 'Clocked Out').length;
+  
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <div className="grid gap-6">
