@@ -20,7 +20,7 @@ interface CombinedEntry {
 
 export default function DashboardClient() {
   const firestore = useFirestore();
-  const { data: employees = [] } = useCollection<Employee>(firestore ? collection(firestore, 'employees') : null);
+  const { data: employees = [] } = useCollection<Employee>('employees');
   
   const todayStr = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
   

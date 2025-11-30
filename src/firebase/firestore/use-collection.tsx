@@ -55,7 +55,7 @@ function useCollection<T>(pathOrQuery: string | Query<T> | null) {
       },
       async (serverError) => {
         const permissionError = new FirestorePermissionError({
-            path: (memoizedQuery as Query).path,
+            path: (memoizedQuery as any)._path?.toString(),
             operation: 'list',
         });
         errorEmitter.emit('permission-error', permissionError);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -34,7 +34,6 @@ const rulesSchema = z.object({
 });
 
 export default function EmployeesClient() {
-  const firestore = useFirestore();
   const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
 
   const [selectedEmployee, setSelectedEmployee] = useState<Document<Employee> | null>(null);
@@ -43,6 +42,8 @@ export default function EmployeesClient() {
   
   const [isAiLoading, setAiLoading] = useState(false);
   const [adjustedRules, setAdjustedRules] = useState<string | null>(null);
+
+  const firestore = useFirestore();
 
   const form = useForm<z.infer<typeof employeeSchema>>({
     resolver: zodResolver(employeeSchema),

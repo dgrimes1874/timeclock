@@ -16,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { Employee, TimeEntry, Document } from '@/lib/data';
-import { format, parse, set, addDays, subDays, getHours } from 'date-fns';
+import { format, set, addDays, subDays, getHours } from 'date-fns';
 import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
 import { Download, Loader2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
@@ -52,10 +52,11 @@ type EditingEntry = {
 export default function ReportsClient() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { data: employees = [] } = useCollection<Employee>(firestore ? collection(firestore, 'employees') : null);
+  const { data: employees = [] } = useCollection<Employee>('employees');
   
   const [currentDate, setCurrentDate] = useState(new Date());
-  const { start, end } = getWeekDateRange(currentDate);
+  
+  const { start, end } = useMemo(() => getWeekDateRange(currentDate), [currentDate]);
 
   const timeEntriesQuery = useMemo(() => {
     if (!firestore) return null;
