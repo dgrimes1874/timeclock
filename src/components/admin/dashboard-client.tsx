@@ -102,8 +102,10 @@ export default function DashboardClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Live Status Dashboard</CardTitle>
-          <CardDescription>Real-time clock-in/out status of all crew members for today.</CardDescription>
+            <div>
+                <CardTitle>Live Status Dashboard</CardTitle>
+                <CardDescription>Real-time clock-in/out status of all crew members for today.</CardDescription>
+            </div>
         </CardHeader>
         <CardContent>
           <Table>
