@@ -3,194 +3,172 @@
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { employees as initialEmployees, timeEntries as initialTimeEntries } from '@/lib/data';
 import type { Employee, TimeEntry } from '@/lib/data';
 import { format } from 'date-fns';
-import { formatCurrency, calculatePay, formatHours } from '@/lib/utils';
-import { generateReportSummaries } from '@/ai/flows/generate-report-summaries';
-import { useToast } from '@/hooks/use-toast';
-import { Bot, Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent, isLate } from '@/lib/utils';
+import { Download } from 'lucide-react';
 
-interface DailyReportEntry {
-  employee: Employee;
-  entry: TimeEntry;
-  payDetails: {
-    totalPay: number;
-    wasLate: boolean;
-    hours: number;
-    basePay: number;
-    bonus: number;
-  };
-}
-
-interface WeeklySummary {
+interface WeeklyReportData {
     employee: Employee;
-    totalHours: number;
-    totalPay: number;
+    dailyData: {
+        [date: string]: {
+            clockIn: Date | null;
+            clockOut: Date | null;
+            wasLate: boolean;
+        };
+    };
+    summary: {
+        totalRegularHours: number;
+        totalBonusHours: number;
+        totalBasePay: number;
+        totalBonusPay: number;
+        totalPayroll: number;
+    };
 }
 
 export default function ReportsClient() {
   const [employees] = useState<Employee[]>(initialEmployees);
   const [timeEntries] = useState<TimeEntry[]>(initialTimeEntries);
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [isAiLoading, setAiLoading] = useState(false);
-  const { toast } = useToast();
-
-  const dailyReportData: DailyReportEntry[] = useMemo(() => {
-    return timeEntries
-      .filter(entry => entry.clockIn && entry.clockOut)
-      .map(entry => {
-        const employee = employees.find(e => e.id === entry.employeeId);
-        if (!employee) return null;
-        const payDetails = calculatePay(employee, entry);
-        return { employee, entry, payDetails };
-      })
-      .filter((e): e is DailyReportEntry => e !== null)
-      .sort((a, b) => b.entry.date.getTime() - a.entry.date.getTime());
-  }, [timeEntries, employees]);
   
-  const weeklySummaryData: WeeklySummary[] = useMemo(() => {
-    const summaryMap = new Map<string, { totalHours: number, totalPay: number }>();
-    dailyReportData.forEach(({ employee, payDetails }) => {
-        const current = summaryMap.get(employee.id) || { totalHours: 0, totalPay: 0 };
-        current.totalHours += payDetails.hours;
-        current.totalPay += payDetails.totalPay;
-        summaryMap.set(employee.id, current);
-    });
-    
-    return Array.from(summaryMap.entries()).map(([employeeId, data]) => {
-        const employee = employees.find(e => e.id === employeeId)!;
-        return { employee, ...data };
-    });
-  }, [dailyReportData, employees]);
+  const { start, end } = getWeekDateRange();
+  const weekDays = getWeekDays(start);
 
-  const handleGenerateSummary = async () => {
-    setAiLoading(true);
-    setAiSummary(null);
-    try {
-      const reportText = dailyReportData.map(r => 
-        `${r.employee.name} on ${format(r.entry.date, 'MM/dd')}: ${formatHours(r.payDetails.hours)}, Regular Pay: ${formatCurrency(r.payDetails.basePay)}, Bonus: ${formatCurrency(r.payDetails.bonus)}, Total: ${formatCurrency(r.payDetails.totalPay)}, Late: ${r.payDetails.wasLate ? 'Yes' : 'No'}`
-      ).join('\n');
+  const weeklyReportData: WeeklyReportData[] = useMemo(() => {
+    return employees.map(employee => {
+        const employeeEntries = timeEntries.filter(
+            entry => entry.employeeId === employee.id && entry.clockIn && entry.clockOut && entry.date >= start && entry.date <= end
+        );
 
-      const result = await generateReportSummaries({ reportData: reportText });
-      setAiSummary(result.summary);
-      toast({ title: 'AI Summary Generated', description: 'The payroll report summary is ready.' });
-    } catch (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to generate AI summary.' });
-    } finally {
-      setAiLoading(false);
+        let totalRegularHours = 0;
+        let totalBonusHours = 0;
+        let totalBasePay = 0;
+        let totalBonusPay = 0;
+
+        const dailyData: WeeklyReportData['dailyData'] = {};
+
+        weekDays.forEach(day => {
+            const dayStr = format(day, 'yyyy-MM-dd');
+            const entryForDay = employeeEntries.find(e => format(e.date, 'yyyy-MM-dd') === dayStr);
+
+            if (entryForDay) {
+                const { wasLate, hours, basePay, bonus } = calculatePay(employee, entryForDay);
+                dailyData[dayStr] = { clockIn: entryForDay.clockIn, clockOut: entryForDay.clockOut, wasLate };
+                totalRegularHours += hours;
+                totalBasePay += basePay;
+                if (!wasLate) {
+                    totalBonusHours += hours;
+                    totalBonusPay += bonus;
+                }
+            } else {
+                dailyData[dayStr] = { clockIn: null, clockOut: null, wasLate: false };
+            }
+        });
+        
+        const totalPayroll = totalBasePay + totalBonusPay;
+
+        return {
+            employee,
+            dailyData,
+            summary: {
+                totalRegularHours,
+                totalBonusHours,
+                totalBasePay,
+                totalBonusPay,
+                totalPayroll,
+            }
+        };
+    });
+  }, [employees, timeEntries, start, end, weekDays]);
+
+  const handleDownloadCsv = () => {
+    const csvContent = generateCsvContent(weeklyReportData, weekDays);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.href) {
+        URL.revokeObjectURL(link.href);
     }
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.setAttribute('download', `payroll_report_${format(start, 'yyyy-MM-dd')}_to_${format(end, 'yyyy-MM-dd')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
     <div className="grid gap-6">
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle>AI Report Summary</CardTitle>
-              <CardDescription>Generate an AI-powered summary of the payroll reports.</CardDescription>
-            </div>
-            <Button onClick={handleGenerateSummary} disabled={isAiLoading}>
-                {isAiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                Generate Summary
-            </Button>
-          </div>
-        </CardHeader>
-        {(isAiLoading || aiSummary) && (
-            <CardContent>
-                {isAiLoading && <p className="text-muted-foreground">Generating summary...</p>}
-                {aiSummary && (
-                    <div className="p-4 bg-muted rounded-lg">
-                        <p className="text-sm text-muted-foreground">{aiSummary}</p>
+        <Card>
+            <CardHeader>
+                <div className="flex justify-between items-start">
+                    <div>
+                        <CardTitle>Detailed Weekly Payroll Report</CardTitle>
+                        <CardDescription>
+                            Report for the week of {format(start, 'MMM d')} - {format(end, 'MMM d, yyyy')}.
+                            The week starts on Saturday and ends on Friday.
+                        </CardDescription>
                     </div>
-                )}
-            </CardContent>
-        )}
-      </Card>
-      
-      <Tabs defaultValue="weekly-summary">
-        <TabsList>
-          <TabsTrigger value="weekly-summary">Weekly Summary</TabsTrigger>
-          <TabsTrigger value="daily-log">Daily Payroll Log</TabsTrigger>
-        </TabsList>
-        <TabsContent value="weekly-summary">
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly Summary</CardTitle>
-              <CardDescription>Total hours and pay for each employee for the current pay period (Saturday-Friday).</CardDescription>
+                    <Button onClick={handleDownloadCsv}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download CSV
+                    </Button>
+                </div>
             </CardHeader>
             <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Employee</TableHead>
-                            <TableHead>Total Hours</TableHead>
-                            <TableHead>Total Pay</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {weeklySummaryData.map(({ employee, totalHours, totalPay }) => (
-                            <TableRow key={employee.id}>
-                                <TableCell className="font-medium">{employee.name}</TableCell>
-                                <TableCell>{formatHours(totalHours)}</TableCell>
-                                <TableCell>{formatCurrency(totalPay)}</TableCell>
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead rowSpan={2} className="sticky left-0 bg-card z-10">Employee</TableHead>
+                                {weekDays.map(day => (
+                                    <TableHead key={format(day, 'T')} className="text-center min-w-[120px]">{format(day, 'EEE')}</TableHead>
+                                ))}
+                                <TableHead colSpan={2} className="text-center">Regular Pay</TableHead>
+                                <TableHead colSpan={2} className="text-center">Bonus Pay</TableHead>
+                                <TableHead rowSpan={2} className="text-right">Total Payroll</TableHead>
                             </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+                            <TableRow>
+                                {weekDays.map(day => (
+                                    <TableHead key={`${format(day, 'T')}-sub`} className="text-center text-xs font-normal text-muted-foreground p-1">In / Out</TableHead>
+                                ))}
+                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Hours</TableHead>
+                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Amount</TableHead>
+                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Hours</TableHead>
+                                <TableHead className="text-center text-xs font-normal text-muted-foreground p-1">Amount</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {weeklyReportData.map(({ employee, dailyData, summary }) => (
+                                <React.Fragment key={employee.id}>
+                                    <TableRow className="bg-muted/20">
+                                        <TableCell className="font-semibold sticky left-0 bg-muted/20 z-10">{employee.name}</TableCell>
+                                        {weekDays.map(day => {
+                                            const dayStr = format(day, 'yyyy-MM-dd');
+                                            const dayData = dailyData[dayStr];
+                                            return (
+                                                <TableCell key={dayStr} className="text-center">
+                                                    {dayData.clockIn && dayData.clockOut ? (
+                                                        <div className={dayData.wasLate ? 'text-red-600' : ''}>
+                                                            {format(dayData.clockIn, 'HH:mm')} / {format(dayData.clockOut, 'HH:mm')}
+                                                        </div>
+                                                    ) : '--'}
+                                                </TableCell>
+                                            );
+                                        })}
+                                        <TableCell className="text-center">{summary.totalRegularHours.toFixed(2)}</TableCell>
+                                        <TableCell className="text-center">{formatCurrency(summary.totalBasePay)}</TableCell>
+                                        <TableCell className="text-center">{summary.totalBonusHours.toFixed(2)}</TableCell>
+                                        <TableCell className="text-center">{formatCurrency(summary.totalBonusPay)}</TableCell>
+                                        <TableCell className="text-right font-bold">{formatCurrency(summary.totalPayroll)}</TableCell>
+                                    </TableRow>
+                                </React.Fragment>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
             </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="daily-log">
-          <Card>
-            <CardHeader>
-              <CardTitle>Daily Payroll Log</CardTitle>
-              <CardDescription>A detailed log of all completed work entries.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Clock In</TableHead>
-                    <TableHead>Clock Out</TableHead>
-                    <TableHead>Hours</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Regular Pay</TableHead>
-                    <TableHead>Bonus</TableHead>
-                    <TableHead className="text-right">Total Pay</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {dailyReportData.map(({ employee, entry, payDetails }) => (
-                    <TableRow key={entry.id}>
-                      <TableCell className="font-medium">{employee.name}</TableCell>
-                      <TableCell>{format(entry.date, 'MM/dd/yyyy')}</TableCell>
-                      <TableCell>{entry.clockIn ? format(entry.clockIn, 'HH:mm') : '-'}</TableCell>
-                      <TableCell>{entry.clockOut ? format(entry.clockOut, 'HH:mm') : '-'}</TableCell>
-                      <TableCell>{formatHours(payDetails.hours)}</TableCell>
-                      <TableCell>
-                        {payDetails.wasLate 
-                          ? <Badge variant="destructive">Late</Badge> 
-                          : <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">On-Time</Badge>
-                        }
-                      </TableCell>
-                      <TableCell>{formatCurrency(payDetails.basePay)}</TableCell>
-                      <TableCell>{formatCurrency(payDetails.bonus)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(payDetails.totalPay)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        </Card>
     </div>
   );
 }

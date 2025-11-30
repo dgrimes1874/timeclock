@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { intervalToDuration, formatDuration, isAfter, set } from 'date-fns';
+import { intervalToDuration, formatDuration, isAfter, set, startOfWeek, endOfWeek, eachDayOfInterval, addDays } from 'date-fns';
 import type { Employee, TimeEntry } from '@/lib/data';
 
 
@@ -47,4 +47,49 @@ export function calculatePay(employee: Employee, entry: TimeEntry): { totalPay: 
   const totalPay = basePay + bonus;
 
   return { totalPay, wasLate, hours, basePay, bonus };
+}
+
+export function getWeekDateRange(date: Date = new Date()): { start: Date, end: Date } {
+    const start = startOfWeek(date, { weekStartsOn: 6 }); // Saturday
+    const end = endOfWeek(date, { weekStartsOn: 6 }); // Friday
+    return { start, end };
+}
+
+export function getWeekDays(start: Date): Date[] {
+    return eachDayOfInterval({ start, end: addDays(start, 6) });
+}
+
+export function generateCsvContent(reportData: any[], weekDays: Date[]): string {
+    const headers = [
+        'Employee',
+        ...weekDays.map(day => `${format(day, 'EEE')} Clock In`),
+        ...weekDays.map(day => `${format(day, 'EEE')} Clock Out`),
+        'Total Regular Hours',
+        'Regular Pay',
+        'Total Bonus Hours',
+        'Bonus Pay',
+        'Total Payroll'
+    ];
+
+    const rows = reportData.map(data => {
+        const row = [
+            `"${data.employee.name}"`,
+            ...weekDays.map(day => {
+                const dayEntry = data.dailyData[format(day, 'yyyy-MM-dd')];
+                return dayEntry?.clockIn ? format(dayEntry.clockIn, 'HH:mm') : '';
+            }),
+            ...weekDays.map(day => {
+                const dayEntry = data.dailyData[format(day, 'yyyy-MM-dd')];
+                return dayEntry?.clockOut ? format(dayEntry.clockOut, 'HH:mm') : '';
+            }),
+            data.summary.totalRegularHours.toFixed(2),
+            formatCurrency(data.summary.totalBasePay),
+            data.summary.totalBonusHours.toFixed(2),
+            formatCurrency(data.summary.totalBonusPay),
+            formatCurrency(data.summary.totalPayroll)
+        ];
+        return row.join(',');
+    });
+
+    return [headers.join(','), ...rows].join('\n');
 }
