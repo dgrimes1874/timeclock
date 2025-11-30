@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -10,16 +10,16 @@ import { Input } from '@/components/ui/input';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import type { Employee, Document } from '@/lib/data';
-import { formatCurrency } from '@/lib/utils';
-import { PlusCircle, Edit, Loader2 } from 'lucide-react';
-import { customizePayrollRules } from '@/ai/flows/customize-payroll-rules';
+import type { Employee, Document, Bonus } from '@/lib/data';
+import { formatCurrency, getWeekDateRange } from '@/lib/utils';
+import { PlusCircle, Edit, Loader2, DollarSign } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const employeeSchema = z.object({
   id: z.string().optional(),
@@ -29,8 +29,10 @@ const employeeSchema = z.object({
   rules: z.string().optional(),
 });
 
-const rulesSchema = z.object({
-  customInstructions: z.string().min(10, "Please provide more detailed instructions."),
+const bonusSchema = z.object({
+  employeeId: z.string().min(1, "Please select an employee."),
+  amount: z.coerce.number().min(0.01, "Bonus amount must be greater than zero."),
+  reason: z.string().min(3, "Please provide a brief reason."),
 });
 
 export default function EmployeesClient() {
@@ -40,108 +42,82 @@ export default function EmployeesClient() {
   const [isFormOpen, setFormOpen] = useState(false);
   const { toast } = useToast();
   
-  const [isAiLoading, setAiLoading] = useState(false);
-  const [adjustedRules, setAdjustedRules] = useState<string | null>(null);
-
   const firestore = useFirestore();
 
-  const form = useForm<z.infer<typeof employeeSchema>>({
+  const employeeForm = useForm<z.infer<typeof employeeSchema>>({
     resolver: zodResolver(employeeSchema),
   });
   
-  const rulesForm = useForm<z.infer<typeof rulesSchema>>({
-    resolver: zodResolver(rulesSchema),
+  const bonusForm = useForm<z.infer<typeof bonusSchema>>({
+    resolver: zodResolver(bonusSchema),
+    defaultValues: {
+        employeeId: '',
+        amount: 0,
+        reason: '',
+    },
   });
 
   const handleEdit = (employee: Document<Employee>) => {
-    form.reset(employee);
+    employeeForm.reset(employee);
     setSelectedEmployee(employee);
     setFormOpen(true);
   };
 
   const handleAdd = () => {
-    form.reset({ name: '', hourlyRate: 0, onTimeBonus: 0, rules: 'Standard pay rules apply.' });
+    employeeForm.reset({ name: '', hourlyRate: 0, onTimeBonus: 0, rules: 'Standard pay rules apply.' });
     setSelectedEmployee(null);
     setFormOpen(true);
   };
 
-  const onSubmit = async (values: z.infer<typeof employeeSchema>) => {
+  const onEmployeeSubmit = async (values: z.infer<typeof employeeSchema>) => {
     if (!firestore) return;
     const { id, ...employeeData } = values;
 
-    if (id) {
-      const docRef = doc(firestore, 'employees', id);
-      updateDoc(docRef, employeeData)
-        .then(() => {
-          toast({ title: 'Success', description: 'Employee updated successfully.' });
-          setFormOpen(false);
-        })
-        .catch(async (serverError) => {
-          const permissionError = new FirestorePermissionError({
-            path: docRef.path,
-            operation: 'update',
-            requestResourceData: employeeData,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        });
-    } else {
-      const employeesCollection = collection(firestore, 'employees');
-      const dataToCreate = { ...employeeData, rules: 'Standard pay rules apply.' };
-      addDoc(employeesCollection, dataToCreate)
-        .then(() => {
-          toast({ title: 'Success', description: 'Employee added successfully.' });
-          setFormOpen(false);
-        })
-        .catch(async (serverError) => {
-          const permissionError = new FirestorePermissionError({
-            path: employeesCollection.path,
-            operation: 'create',
-            requestResourceData: dataToCreate,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        });
-    }
-  };
-
-  const onRulesSubmit = async (values: z.infer<typeof rulesSchema>) => {
-    if (!selectedEmployee) return;
-
-    setAiLoading(true);
-    setAdjustedRules(null);
     try {
-      const result = await customizePayrollRules({
-        employeeName: selectedEmployee.name,
-        currentRules: selectedEmployee.rules,
-        customInstructions: values.customInstructions,
-      });
-      setAdjustedRules(result.adjustedRules);
-      toast({ title: 'AI Suggestion Ready', description: 'Review the adjusted payroll rules.' });
-    } catch (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to get AI suggestion.' });
-    } finally {
-      setAiLoading(false);
+      if (id) {
+        const docRef = doc(firestore, 'employees', id);
+        await updateDoc(docRef, employeeData);
+        toast({ title: 'Success', description: 'Employee updated successfully.' });
+      } else {
+        const employeesCollection = collection(firestore, 'employees');
+        const dataToCreate = { ...employeeData, rules: 'Standard pay rules apply.' };
+        await addDoc(employeesCollection, dataToCreate);
+        toast({ title: 'Success', description: 'Employee added successfully.' });
+      }
+      setFormOpen(false);
+    } catch (serverError: any) {
+      const operation = id ? 'update' : 'create';
+      const path = id ? `employees/${id}` : 'employees';
+      const requestResourceData = id ? employeeData : { ...employeeData, rules: 'Standard pay rules apply.' };
+      
+      const permissionError = new FirestorePermissionError({ path, operation, requestResourceData });
+      errorEmitter.emit('permission-error', permissionError);
     }
   };
-  
-  const applyAdjustedRules = async () => {
-    if (selectedEmployee && adjustedRules && firestore) {
-        const docRef = doc(firestore, 'employees', selectedEmployee.id);
-        const updatedData = { rules: adjustedRules };
-        updateDoc(docRef, updatedData)
-            .then(() => {
-                toast({ title: 'Rules Updated', description: `Payroll rules for ${selectedEmployee.name} have been updated.` });
-                setAdjustedRules(null);
-                rulesForm.reset();
-                setSelectedEmployee(prev => prev ? {...prev, rules: adjustedRules} : null);
-            })
-            .catch(async (serverError) => {
-                const permissionError = new FirestorePermissionError({
-                    path: docRef.path,
-                    operation: 'update',
-                    requestResourceData: updatedData,
-                });
-                errorEmitter.emit('permission-error', permissionError);
-            });
+
+  const onBonusSubmit = async (values: z.infer<typeof bonusSchema>) => {
+    if (!firestore) return;
+
+    const { start } = getWeekDateRange(new Date());
+
+    const newBonus: Omit<Bonus, 'id'> = {
+        ...values,
+        amount: values.amount,
+        date: Timestamp.fromDate(start), // Store the start of the week for grouping
+    };
+
+    try {
+        const bonusesCollection = collection(firestore, 'bonuses');
+        await addDoc(bonusesCollection, newBonus);
+        toast({ title: 'Success!', description: `Bonus of ${formatCurrency(values.amount)} added for the selected employee.` });
+        bonusForm.reset();
+    } catch (serverError: any) {
+         const permissionError = new FirestorePermissionError({
+            path: 'bonuses',
+            operation: 'create',
+            requestResourceData: newBonus,
+        });
+        errorEmitter.emit('permission-error', permissionError);
     }
   };
 
@@ -165,31 +141,31 @@ export default function EmployeesClient() {
                   <DialogTitle>{selectedEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
                   <DialogDescription>Fill in the details for the crew member.</DialogDescription>
                 </DialogHeader>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField control={form.control} name="name" render={({ field }) => (
+                <Form {...employeeForm}>
+                  <form onSubmit={employeeForm.handleSubmit(onEmployeeSubmit)} className="space-y-4">
+                    <FormField control={employeeForm.control} name="name" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Full Name</FormLabel>
                         <FormControl><Input placeholder="John Doe" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField control={form.control} name="hourlyRate" render={({ field }) => (
+                    <FormField control={employeeForm.control} name="hourlyRate" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Hourly Rate ($)</FormLabel>
                         <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField control={form.control} name="onTimeBonus" render={({ field }) => (
+                    <FormField control={employeeForm.control} name="onTimeBonus" render={({ field }) => (
                       <FormItem>
                         <FormLabel>On-Time Bonus ($/hr)</FormLabel>
                         <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <Button type="submit" disabled={form.formState.isSubmitting}>
-                        {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Button type="submit" disabled={employeeForm.formState.isSubmitting}>
+                        {employeeForm.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Save Employee
                     </Button>
                   </form>
@@ -212,7 +188,7 @@ export default function EmployeesClient() {
               {employeesLoading ? (
                 <TableRow><TableCell colSpan={4} className="text-center">Loading...</TableCell></TableRow>
               ) : employees.map((employee) => (
-                <TableRow key={employee.id} onClick={() => { setSelectedEmployee(employee); setAdjustedRules(null); rulesForm.reset(); }} className="cursor-pointer" data-state={selectedEmployee?.id === employee.id ? 'selected' : ''}>
+                <TableRow key={employee.id}>
                   <TableCell className="font-medium">{employee.name}</TableCell>
                   <TableCell>{formatCurrency(employee.hourlyRate)}</TableCell>
                   <TableCell>{formatCurrency(employee.onTimeBonus)}</TableCell>
@@ -230,46 +206,70 @@ export default function EmployeesClient() {
       
       <Card>
         <CardHeader>
-          <CardTitle>Customize Payroll Rules (AI)</CardTitle>
-          <CardDescription>Select an employee and use AI to adjust their payroll rules.</CardDescription>
+          <CardTitle>Add Weekly Bonus</CardTitle>
+          <CardDescription>Reward an employee for a job well done this week.</CardDescription>
         </CardHeader>
-        {selectedEmployee ? (
-          <CardContent className="space-y-4">
-              <div>
-                <h3 className="font-semibold">{selectedEmployee.name}'s Current Rules</h3>
-                <p className="text-sm text-muted-foreground p-3 bg-muted rounded-md mt-1">{selectedEmployee.rules}</p>
-              </div>
-              <Form {...rulesForm}>
-                  <form onSubmit={rulesForm.handleSubmit(onRulesSubmit)} className="space-y-4">
-                       <FormField control={rulesForm.control} name="customInstructions" render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Custom Instructions</FormLabel>
-                            <FormControl>
-                                <Textarea placeholder={`e.g., "Double overtime pay on weekends." or "No on-time bonus for this week."`} {...field} />
-                            </FormControl>
-                             <FormMessage />
-                          </FormItem>
-                       )} />
-                       <Button type="submit" disabled={isAiLoading}>
-                         {isAiLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                         Generate Adjusted Rules
-                       </Button>
-                  </form>
-              </Form>
-
-              {adjustedRules && (
-                <div className="space-y-2 pt-4">
-                    <h3 className="font-semibold">AI Suggested Rules</h3>
-                    <p className="text-sm text-green-700 dark:text-green-400 p-3 bg-green-50 dark:bg-green-900/50 rounded-md mt-1">{adjustedRules}</p>
-                    <Button onClick={applyAdjustedRules}>Apply these rules</Button>
-                </div>
-              )}
-          </CardContent>
-        ) : (
-          <CardContent>
-            <p className="text-muted-foreground text-center py-8">Select an employee from the list to customize their rules.</p>
-          </CardContent>
-        )}
+        <CardContent>
+            <Form {...bonusForm}>
+                <form onSubmit={bonusForm.handleSubmit(onBonusSubmit)} className="space-y-4">
+                    <FormField
+                        control={bonusForm.control}
+                        name="employeeId"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Employee</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select an employee" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {employees.map(emp => (
+                                        <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={bonusForm.control}
+                        name="amount"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Bonus Amount</FormLabel>
+                                <FormControl>
+                                    <div className="relative">
+                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input type="number" step="0.01" placeholder="50.00" {...field} className="pl-8" />
+                                    </div>
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={bonusForm.control}
+                        name="reason"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Reason</FormLabel>
+                                <FormControl>
+                                    <Textarea placeholder="e.g., 'Excellent performance on the project.'" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                    <Button type="submit" disabled={bonusForm.formState.isSubmitting}>
+                        {bonusForm.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Add Bonus
+                    </Button>
+                </form>
+            </Form>
+        </CardContent>
       </Card>
     </div>
   );

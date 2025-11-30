@@ -15,16 +15,18 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import type { Employee, TimeEntry, Document } from '@/lib/data';
+import type { Employee, TimeEntry, Document, Bonus } from '@/lib/data';
 import { format, set, addDays, subDays, getHours } from 'date-fns';
 import { formatCurrency, calculatePay, getWeekDateRange, getWeekDays, generateCsvContent } from '@/lib/utils';
-import { Download, Loader2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Loader2, Trash2, ChevronLeft, ChevronRight, BadgeDollarSign } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, addDoc, updateDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Badge } from '@/components/ui/badge';
 
 interface WeeklyReportData {
     employee: Document<Employee>;
@@ -34,11 +36,13 @@ interface WeeklyReportData {
             wasLate: boolean;
         };
     };
+    weeklyBonuses: Document<Bonus>[];
     summary: {
         totalRegularHours: number;
         totalBonusHours: number;
         totalBasePay: number;
-        totalBonusPay: number;
+        totalOnTimeBonusPay: number;
+        totalWeeklyBonusPay: number;
         totalPayroll: number;
     };
 }
@@ -67,7 +71,19 @@ export default function ReportsClient() {
     );
   }, [firestore, start, end]);
 
+  const bonusesQuery = useMemo(() => {
+    if (!firestore) return null;
+    return query(
+      collection(firestore, 'bonuses'),
+      where('date', '>=', start),
+      where('date', '<=', end)
+    );
+  }, [firestore, start, end]);
+
+
   const { data: timeEntries = [], setData: setTimeEntries } = useCollection<TimeEntry>(timeEntriesQuery);
+  const { data: bonuses = [] } = useCollection<Bonus>(bonusesQuery);
+
 
   const [isDialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null);
@@ -82,11 +98,13 @@ export default function ReportsClient() {
         const employeeEntries = timeEntries.filter(
             entry => entry.employeeId === employee.id && entry.clockIn && entry.clockOut
         );
+        
+        const weeklyBonuses = bonuses.filter(bonus => bonus.employeeId === employee.id);
 
         let totalRegularHours = 0;
         let totalBonusHours = 0;
         let totalBasePay = 0;
-        let totalBonusPay = 0;
+        let totalOnTimeBonusPay = 0;
 
         const dailyData: WeeklyReportData['dailyData'] = {};
         const weekDays = getWeekDays(start);
@@ -104,28 +122,31 @@ export default function ReportsClient() {
                 totalBasePay += payDetails.basePay;
                 if (!wasLate) {
                     totalBonusHours += payDetails.hours;
-                    totalBonusPay += payDetails.bonus;
+                    totalOnTimeBonusPay += payDetails.bonus;
                 }
             } else {
                 dailyData[dayStr] = { entry: undefined, wasLate: false };
             }
         });
         
-        const totalPayroll = totalBasePay + totalBonusPay;
+        const totalWeeklyBonusPay = weeklyBonuses.reduce((acc, bonus) => acc + bonus.amount, 0);
+        const totalPayroll = totalBasePay + totalOnTimeBonusPay + totalWeeklyBonusPay;
 
         return {
             employee,
             dailyData,
+            weeklyBonuses,
             summary: {
                 totalRegularHours,
                 totalBonusHours,
                 totalBasePay,
-                totalBonusPay,
+                totalOnTimeBonusPay,
+                totalWeeklyBonusPay,
                 totalPayroll,
             }
         };
     });
-  }, [employees, timeEntries, start]);
+  }, [employees, timeEntries, bonuses, start]);
   
   const handleCellClick = (employee: Document<Employee>, date: Date, entry: Document<TimeEntry> | undefined) => {
     setEditingEntry({ employee, date, entry });
@@ -187,7 +208,6 @@ export default function ReportsClient() {
             };
             await updateDoc(entryRef, updatedData);
             
-            // Optimistically update local state for immediate UI feedback
             setTimeEntries(prev => prev.map(e => e.id === entry.id ? {...e, ...updatedData} : e));
 
             toast({ title: 'Success', description: 'Time entry updated.' });
@@ -201,7 +221,6 @@ export default function ReportsClient() {
             };
             const newDocRef = await addDoc(collRef, newEntryData);
             
-            // Optimistically update local state for immediate UI feedback
             setTimeEntries(prev => [...prev, { id: newDocRef.id, ...newEntryData } as Document<TimeEntry>]);
             
             toast({ title: 'Success', description: 'Time entry created.' });
@@ -228,7 +247,6 @@ export default function ReportsClient() {
       try {
         await deleteDoc(entryRef);
 
-        // Optimistically update local state
         setTimeEntries(prev => prev.filter(e => e.id !== entryId));
 
         toast({ title: 'Success', description: 'Time entry deleted.' });
@@ -302,7 +320,8 @@ export default function ReportsClient() {
                                       <TableHead key={format(day, 'T')} className="text-center min-w-[120px]">{format(day, 'EEE')}</TableHead>
                                   ))}
                                   <TableHead colSpan={2} className="text-center">Regular Pay</TableHead>
-                                  <TableHead colSpan={2} className="text-center">Bonus Pay</TableHead>
+                                  <TableHead colSpan={2} className="text-center">On-Time Bonus</TableHead>
+                                  <TableHead rowSpan={2} className="text-center">Weekly Bonus</TableHead>
                                   <TableHead rowSpan={2} className="text-right">Total Payroll</TableHead>
                               </TableRow>
                               <TableRow>
@@ -316,10 +335,40 @@ export default function ReportsClient() {
                               </TableRow>
                           </TableHeader>
                           <TableBody>
-                              {weeklyReportData.map(({ employee, dailyData, summary }) => (
+                              {weeklyReportData.map(({ employee, dailyData, summary, weeklyBonuses }) => (
                                   <React.Fragment key={employee.id}>
                                       <TableRow className="bg-muted/20">
-                                          <TableCell className="font-semibold sticky left-0 bg-muted/20 z-10">{employee.name}</TableCell>
+                                          <TableCell className="font-semibold sticky left-0 bg-muted/20 z-10 flex items-center gap-2">
+                                              <span>{employee.name}</span>
+                                                {weeklyBonuses.length > 0 && (
+                                                    <Popover>
+                                                        <PopoverTrigger asChild>
+                                                            <button className="relative">
+                                                                <BadgeDollarSign className="h-5 w-5 text-yellow-500" />
+                                                                <span className="absolute -top-1 -right-2 text-xs font-bold text-yellow-700">{weeklyBonuses.length}</span>
+                                                            </button>
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="w-80">
+                                                            <div className="grid gap-4">
+                                                                <div className="space-y-2">
+                                                                    <h4 className="font-medium leading-none">Weekly Bonuses</h4>
+                                                                    <p className="text-sm text-muted-foreground">
+                                                                        Bonuses awarded for this week.
+                                                                    </p>
+                                                                </div>
+                                                                <div className="grid gap-2">
+                                                                    {weeklyBonuses.map(bonus => (
+                                                                        <div key={bonus.id} className="grid grid-cols-3 items-center gap-4">
+                                                                            <span className="col-span-2 truncate" title={bonus.reason}>{bonus.reason}</span>
+                                                                            <span className="font-semibold justify-self-end">{formatCurrency(bonus.amount)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                )}
+                                          </TableCell>
                                           {weekDays.map(day => {
                                               const dayStr = format(day, 'yyyy-MM-dd');
                                               const dayData = dailyData[dayStr];
@@ -341,7 +390,8 @@ export default function ReportsClient() {
                                           <TableCell className="text-center">{summary.totalRegularHours.toFixed(2)}</TableCell>
                                           <TableCell className="text-center">{formatCurrency(summary.totalBasePay)}</TableCell>
                                           <TableCell className="text-center">{summary.totalBonusHours.toFixed(2)}</TableCell>
-                                          <TableCell className="text-center">{formatCurrency(summary.totalBonusPay)}</TableCell>
+                                          <TableCell className="text-center">{formatCurrency(summary.totalOnTimeBonusPay)}</TableCell>
+                                          <TableCell className="text-center">{formatCurrency(summary.totalWeeklyBonusPay)}</TableCell>
                                           <TableCell className="text-right font-bold">{formatCurrency(summary.totalPayroll)}</TableCell>
                                       </TableRow>
                                   </React.Fragment>

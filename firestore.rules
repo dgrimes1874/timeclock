@@ -3,14 +3,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /employees/{employeeId} {
-      // Allow reading a single employee document and listing all employees
-      allow get, list: if true;
-      // For now, allow anyone to create, update, or delete employees.
-      allow write: if true;
+      allow read, write: if true;
     }
 
     match /timeEntries/{timeEntryId} {
-      // Allow reading and writing to time entries for now.
+      allow read, write: if true;
+    }
+
+    match /bonuses/{bonusId} {
       allow read, write: if true;
     }
   }

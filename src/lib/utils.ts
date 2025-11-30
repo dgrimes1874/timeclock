@@ -68,8 +68,9 @@ export function generateCsvContent(reportData: any[], weekDays: Date[]): string 
         ...weekDays.map(day => `${format(day, 'EEE')} Clock Out`),
         'Total Regular Hours',
         'Regular Pay',
-        'Total Bonus Hours',
-        'Bonus Pay',
+        'Total On-Time Bonus Hours',
+        'On-Time Bonus Pay',
+        'Weekly Bonus Pay',
         'Total Payroll'
     ];
 
@@ -89,7 +90,8 @@ export function generateCsvContent(reportData: any[], weekDays: Date[]): string 
             data.summary.totalRegularHours.toFixed(2),
             formatCurrency(data.summary.totalBasePay),
             data.summary.totalBonusHours.toFixed(2),
-            formatCurrency(data.summary.totalBonusPay),
+            formatCurrency(data.summary.totalOnTimeBonusPay),
+            formatCurrency(data.summary.totalWeeklyBonusPay),
             formatCurrency(data.summary.totalPayroll)
         ];
         return row.join(',');

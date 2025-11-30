@@ -17,3 +17,10 @@ export interface TimeEntry {
   clockOut: Timestamp | null;
   date: Timestamp;
 }
+
+export interface Bonus {
+  employeeId: string;
+  amount: number;
+  reason: string;
+  date: Timestamp;
+}

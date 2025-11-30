@@ -50,6 +50,31 @@
         }
       },
       "required": ["employeeId", "date"]
+    },
+    "Bonus": {
+      "title": "Bonus",
+      "description": "Represents a one-time bonus given to an employee for a specific week.",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "description": "The ID of the employee this bonus belongs to."
+        },
+        "amount": {
+          "type": "number",
+          "description": "The monetary amount of the bonus."
+        },
+        "reason": {
+          "type": "string",
+          "description": "The reason for giving the bonus."
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The start date of the week for which the bonus is awarded."
+        }
+      },
+      "required": ["employeeId", "amount", "reason", "date"]
     }
   },
   "auth": {
@@ -63,6 +88,10 @@
     "/timeEntries/{timeEntryId}": {
       "schema": { "$ref": "#/entities/TimeEntry" },
       "description": "Stores all time clock-in and clock-out entries."
+    },
+    "/bonuses/{bonusId}": {
+      "schema": { "$ref": "#/entities/Bonus" },
+      "description": "Stores weekly performance bonuses for employees."
     }
   }
 }
