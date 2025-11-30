@@ -22,7 +22,12 @@
           "description": "Custom payroll rules for the employee."
         }
       },
-      "required": ["name", "hourlyRate", "onTimeBonus", "rules"]
+      "required": [
+        "name",
+        "hourlyRate",
+        "onTimeBonus",
+        "rules"
+      ]
     },
     "TimeEntry": {
       "title": "TimeEntry",
@@ -44,12 +49,15 @@
           "description": "The timestamp when the employee clocked out."
         },
         "date": {
-            "type": "string",
-            "format": "date-time",
-            "description": "The date of the time entry."
+          "type": "string",
+          "format": "date-time",
+          "description": "The date of the time entry."
         }
       },
-      "required": ["employeeId", "date"]
+      "required": [
+        "employeeId",
+        "date"
+      ]
     },
     "Bonus": {
       "title": "Bonus",
@@ -74,23 +82,36 @@
           "description": "The start date of the week for which the bonus is awarded."
         }
       },
-      "required": ["employeeId", "amount", "reason", "date"]
+      "required": [
+        "employeeId",
+        "amount",
+        "reason",
+        "date"
+      ]
     }
   },
   "auth": {
-    "providers": []
+    "providers": [
+      "email-password"
+    ]
   },
   "firestore": {
     "/employees/{employeeId}": {
-      "schema": { "$ref": "#/entities/Employee" },
+      "schema": {
+        "$ref": "#/entities/Employee"
+      },
       "description": "Stores information about individual employees."
     },
     "/timeEntries/{timeEntryId}": {
-      "schema": { "$ref": "#/entities/TimeEntry" },
+      "schema": {
+        "$ref": "#/entities/TimeEntry"
+      },
       "description": "Stores all time clock-in and clock-out entries."
     },
     "/bonuses/{bonusId}": {
-      "schema": { "$ref": "#/entities/Bonus" },
+      "schema": {
+        "$ref": "#/entities/Bonus"
+      },
       "description": "Stores weekly performance bonuses for employees."
     }
   }

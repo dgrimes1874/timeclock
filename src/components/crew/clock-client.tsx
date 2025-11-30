@@ -10,18 +10,6 @@ import { isLate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, LogIn, LogOut, Timer, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -38,8 +26,6 @@ export default function ClockClient() {
   const { toast } = useToast();
   const router = useRouter();
 
-  const [adminCode, setAdminCode] = useState('');
-  const [isDialogOpen, setDialogOpen] = useState(false);
   const [isClocking, setIsClocking] = useState(false);
   const [isFetchingEntries, setIsFetchingEntries] = useState(false);
 
@@ -150,59 +136,13 @@ export default function ClockClient() {
     }
   };
   
-  const handleAdminAccess = () => {
-    if (adminCode.toLowerCase() === 'pam') {
-      router.push('/');
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Incorrect Code',
-        description: 'The code you entered is incorrect. Please try again.',
-      });
-      setAdminCode('');
-    }
-  };
-  
   if (!isClient) return null;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-muted/40 p-4">
-       <Dialog open={isDialogOpen} onOpenChange={setDialogOpen}>
-        <DialogTrigger asChild>
-          <Button variant="ghost" className="absolute top-4 left-4">
+       <Button variant="ghost" className="absolute top-4 left-4" onClick={() => router.push('/')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Admin
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Admin Access</DialogTitle>
-            <DialogDescription>
-              Enter the passcode to access the admin dashboard.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="admin-code" className="text-right">
-                Passcode
-              </Label>
-              <Input
-                id="admin-code"
-                type="password"
-                value={adminCode}
-                onChange={(e) => setAdminCode(e.target.value)}
-                className="col-span-3"
-                onKeyDown={(e) => e.key === 'Enter' && handleAdminAccess()}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button type="submit" onClick={handleAdminAccess}>Enter</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </Button>
 
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">

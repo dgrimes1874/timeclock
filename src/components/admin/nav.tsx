@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   SidebarHeader,
@@ -11,9 +11,12 @@ import {
   SidebarMenuButton,
   SidebarFooter,
 } from '@/components/ui/sidebar';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Home, Users, FileText, Timer, LogOut } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { useAuth, useUser } from '@/firebase';
+import { signOut } from 'firebase/auth';
+import { useToast } from '@/hooks/use-toast';
 
 const navItems = [
   { href: '/', icon: Home, label: 'Dashboard' },
@@ -23,6 +26,20 @@ const navItems = [
 
 export default function AdminNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const auth = useAuth();
+  const { user } = useUser();
+  const { toast } = useToast();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
+      router.push('/login');
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to log out.' });
+    }
+  };
 
   return (
     <>
@@ -64,14 +81,13 @@ export default function AdminNav() {
                     </Link>
                 </SidebarMenuButton>
             </SidebarMenuItem>
-            <SidebarMenuItem>
-                <SidebarMenuButton tooltip={{ children: 'Admin' }}>
-                    <Avatar className="h-6 w-6">
-                        <AvatarImage src="https://picsum.photos/seed/admin/32/32" data-ai-hint="person face" />
-                        <AvatarFallback>A</AvatarFallback>
-                    </Avatar>
-                    <span>Admin</span>
-                </SidebarMenuButton>
+             <SidebarMenuItem>
+              <SidebarMenuButton onClick={handleSignOut} tooltip={{ children: `Log out ${user?.email}` }}>
+                <Avatar className="h-6 w-6">
+                    <AvatarFallback>{user?.email?.charAt(0).toUpperCase() ?? 'A'}</AvatarFallback>
+                </Avatar>
+                <span>Log Out</span>
+              </SidebarMenuButton>
             </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

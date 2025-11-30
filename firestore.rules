@@ -2,16 +2,24 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+  
+    // Admins can manage employees. All users can read employee list for clock-in.
     match /employees/{employeeId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.auth != null; // Allow writes only for authenticated (admin) users
     }
 
+    // Users can create their own time entries.
+    // Admins can read/write any time entry for reporting and corrections.
     match /timeEntries/{timeEntryId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null; // Admin access
+      allow create: if request.resource.data.employeeId == request.auth.uid || request.auth == null; // Allow create for self or if unauthenticated (for initial clock-in)
+      allow update: if resource.data.employeeId == request.auth.uid; // Allow update for self
     }
 
+    // Only admins can create/read/write bonuses
     match /bonuses/{bonusId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
   }
 }
