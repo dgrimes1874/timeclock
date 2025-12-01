@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, LogIn, LogOut, Timer, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc, orderBy } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
@@ -48,7 +48,8 @@ export default function ClockClient() {
           collection(firestore, 'timeEntries'),
           where('employeeId', '==', selectedEmployeeId),
           where('date', '>=', startOfToday),
-          where('date', '<', endOfToday)
+          where('date', '<', endOfToday),
+          orderBy('date', 'desc')
         );
         const querySnapshot = await getDocs(q);
         const entries: Document<TimeEntry>[] = [];
