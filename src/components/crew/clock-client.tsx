@@ -10,7 +10,7 @@ import { isLate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, LogIn, LogOut, Timer, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useCollection, useFirestore } from '@/firebase';
+import { useCollection, useFirestore, useUser } from '@/firebase';
 import { collection, query, where, getDocs, addDoc, updateDoc, Timestamp, doc } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -18,6 +18,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function ClockClient() {
   const firestore = useFirestore();
+  const { user: adminUser } = useUser(); // Check for admin user session
   const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
   const [timeEntries, setTimeEntries] = useState<Document<TimeEntry>[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
@@ -140,9 +141,11 @@ export default function ClockClient() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-muted/40 p-4">
-       <Button variant="ghost" className="absolute top-4 left-4" onClick={() => router.push('/')}>
+       {adminUser && (
+        <Button variant="ghost" className="absolute top-4 left-4" onClick={() => router.push('/')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Admin
         </Button>
+       )}
 
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
