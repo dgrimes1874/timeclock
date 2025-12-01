@@ -15,8 +15,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <AdminNav />
         </Sidebar>
         <SidebarInset>
+          <Header />
           <AdminAuthGuard>
-            <Header />
             <main className="flex-1 p-4 sm:p-6 bg-background/95">
               {children}
             </main>
