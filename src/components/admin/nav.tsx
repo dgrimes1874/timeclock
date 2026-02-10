@@ -75,7 +75,7 @@ export default function AdminNav() {
          <SidebarMenu>
             <SidebarMenuItem>
                 <SidebarMenuButton asChild tooltip={{ children: 'Crew View' }}>
-                    <Link href="/crew">
+                    <Link href="/">
                         <LogOut className="rotate-180" />
                         <span>Crew View</span>
                     </Link>
