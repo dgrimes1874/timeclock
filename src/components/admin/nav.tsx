@@ -19,7 +19,7 @@ import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 
 const navItems = [
-  { href: '/', icon: Home, label: 'Dashboard' },
+  { href: '/dashboard', icon: Home, label: 'Dashboard' },
   { href: '/employees', icon: Users, label: 'Employees' },
   { href: '/reports', icon: FileText, label: 'Reports' },
 ];

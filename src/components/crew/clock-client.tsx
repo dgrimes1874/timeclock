@@ -142,7 +142,7 @@ export default function ClockClient() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-muted/40 p-4">
        {adminUser && (
-        <Button variant="ghost" className="absolute top-4 left-4" onClick={() => router.push('/')}>
+        <Button variant="ghost" className="absolute top-4 left-4" onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Admin
         </Button>
        )}

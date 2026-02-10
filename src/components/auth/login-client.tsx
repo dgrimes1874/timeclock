@@ -22,7 +22,7 @@ export default function LoginClient() {
 
   useEffect(() => {
     if (user) {
-      router.push('/');
+      router.push('/dashboard');
     }
   }, [user, router]);
 
@@ -43,7 +43,7 @@ export default function LoginClient() {
         title: 'Login Successful',
         description: 'Redirecting to your dashboard...',
       });
-      router.push('/');
+      router.push('/dashboard');
     } catch (error: any) {
       console.error(error);
       const errorCode = error.code;

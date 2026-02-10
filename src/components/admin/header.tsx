@@ -8,7 +8,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Home } from 'lucide-react';
 
 const breadcrumbNameMap: { [key: string]: string } = {
-  '/': 'Dashboard',
+  '/dashboard': 'Dashboard',
   '/employees': 'Employees',
   '/reports': 'Reports',
   '/crew': 'Crew View',
@@ -26,7 +26,7 @@ export default function Header() {
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link href="/">
+                <Link href="/dashboard">
                   <Home className="h-4 w-4" />
                 </Link>
               </BreadcrumbLink>
