@@ -5,9 +5,8 @@ import { FirebaseProvider } from './provider';
 import { initializeFirebase } from '.';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 
-// This component now solely focuses on initializing Firebase on the client
-// and setting up the provider and error listener.
 export function FirebaseClientProvider({ children }: { children: React.ReactNode }) {
+  // This function initializes Firebase and gets the app, auth, and firestore instances.
   const { firebaseApp, auth, firestore } = initializeFirebase();
 
   return (
