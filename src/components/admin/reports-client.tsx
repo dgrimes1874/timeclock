@@ -92,9 +92,18 @@ export default function ReportsClient() {
   const [clockOutPeriod, setClockOutPeriod] = useState<'am' | 'pm'>('pm');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Sort employees alphabetically by last name
+  const sortedEmployees = useMemo(() => {
+    return [...employees].filter(e => (e as any).active !== false).sort((a, b) => {
+      const lastA = a.name.split(' ').pop()?.toLowerCase() || '';
+      const lastB = b.name.split(' ').pop()?.toLowerCase() || '';
+      return lastA.localeCompare(lastB);
+    });
+  }, [employees]);
+
   const weeklyReportData: WeeklyReportData[] = useMemo(() => {
-    if (!employees.length) return [];
-    return employees.map(employee => {
+    if (!sortedEmployees.length) return [];
+    return sortedEmployees.map(employee => {
         const employeeEntries = timeEntries.filter(
             entry => entry.employeeId === employee.id && entry.clockIn && entry.clockOut
         );
@@ -146,7 +155,7 @@ export default function ReportsClient() {
             }
         };
     });
-  }, [employees, timeEntries, bonuses, start]);
+  }, [sortedEmployees, timeEntries, bonuses, start]);
   
   const handleCellClick = (employee: Document<Employee>, date: Date, entry: Document<TimeEntry> | undefined) => {
     setEditingEntry({ employee, date, entry });

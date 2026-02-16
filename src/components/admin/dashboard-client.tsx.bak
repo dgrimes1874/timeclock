@@ -49,9 +49,7 @@ export default function DashboardClient() {
     return () => clearInterval(timer);
   }, []);
 
-  const activeOnly = useMemo(() => employees.filter(e => (e as any).active !== false).sort((a, b) => { const lastA = a.name.split(" ").pop()?.toLowerCase() || ""; const lastB = b.name.split(" ").pop()?.toLowerCase() || ""; return lastA.localeCompare(lastB); }), [employees]);
-
-  const combinedData: CombinedEntry[] = useMemo(() => activeOnly.map(employee => {
+  const combinedData: CombinedEntry[] = useMemo(() => employees.map(employee => {
     const entry = timeEntries.find(e => e.employeeId === employee.id);
     let status: CombinedEntry['status'] = 'Clocked Out';
     if (entry?.clockIn && !entry.clockOut) {
@@ -88,8 +86,8 @@ export default function DashboardClient() {
                 <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-                <div className="text-2xl font-bold">{activeOnly.length}</div>
-                <p className="text-xs text-muted-foreground">Active crew members</p>
+                <div className="text-2xl font-bold">{employees.length}</div>
+                <p className="text-xs text-muted-foreground">Total registered crew members</p>
             </CardContent>
         </Card>
         <Card>

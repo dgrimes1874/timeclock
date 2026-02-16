@@ -9,6 +9,7 @@ export interface Employee {
   hourlyRate: number;
   onTimeBonus: number;
   rules: string;
+  active: boolean;
 }
 
 export interface TimeEntry {

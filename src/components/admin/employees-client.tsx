@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -20,12 +21,14 @@ import { collection, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestor
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 
 const employeeSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(2, 'Name must be at least 2 characters.'),
   hourlyRate: z.coerce.number().min(0, 'Hourly rate must be a positive number.'),
   onTimeBonus: z.coerce.number().min(0, 'Bonus must be a positive number.'),
+  active: z.boolean(),
   rules: z.string().optional(),
 });
 
@@ -57,14 +60,28 @@ export default function EmployeesClient() {
     },
   });
 
+  // Only active employees, sorted by last name
+  const activeEmployees = useMemo(() => {
+    return employees
+      .filter(e => e.active !== false)
+      .sort((a, b) => {
+        const lastA = a.name.split(' ').pop()?.toLowerCase() || '';
+        const lastB = b.name.split(' ').pop()?.toLowerCase() || '';
+        return lastA.localeCompare(lastB);
+      });
+  }, [employees]);
+
   const handleEdit = (employee: Document<Employee>) => {
-    employeeForm.reset(employee);
+    employeeForm.reset({
+      ...employee,
+      active: employee.active !== false,
+    });
     setSelectedEmployee(employee);
     setFormOpen(true);
   };
 
   const handleAdd = () => {
-    employeeForm.reset({ name: '', hourlyRate: 0, onTimeBonus: 0, rules: 'Standard pay rules apply.' });
+    employeeForm.reset({ name: '', hourlyRate: 0, onTimeBonus: 0, active: true, rules: 'Standard pay rules apply.' });
     setSelectedEmployee(null);
     setFormOpen(true);
   };
@@ -103,7 +120,7 @@ export default function EmployeesClient() {
     const newBonus: Omit<Bonus, 'id'> = {
         ...values,
         amount: values.amount,
-        date: Timestamp.fromDate(start), // Store the start of the week for grouping
+        date: Timestamp.fromDate(start),
     };
 
     try {
@@ -164,6 +181,19 @@ export default function EmployeesClient() {
                         <FormMessage />
                       </FormItem>
                     )} />
+                    <FormField control={employeeForm.control} name="active" render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div>
+                          <FormLabel className="text-base">Active Employee</FormLabel>
+                          <p className="text-sm text-muted-foreground">
+                            Inactive employees are hidden from all views.
+                          </p>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )} />
                     <Button type="submit" disabled={employeeForm.formState.isSubmitting}>
                         {employeeForm.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Save Employee
@@ -187,7 +217,7 @@ export default function EmployeesClient() {
             <TableBody>
               {employeesLoading ? (
                 <TableRow><TableCell colSpan={4} className="text-center">Loading...</TableCell></TableRow>
-              ) : employees.map((employee) => (
+              ) : activeEmployees.map((employee) => (
                 <TableRow key={employee.id}>
                   <TableCell className="font-medium">{employee.name}</TableCell>
                   <TableCell>{formatCurrency(employee.hourlyRate)}</TableCell>
@@ -225,7 +255,7 @@ export default function EmployeesClient() {
                                     </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                    {employees.map(emp => (
+                                    {activeEmployees.map(emp => (
                                         <SelectItem key={emp.id} value={emp.id}>{emp.name}</SelectItem>
                                     ))}
                                 </SelectContent>

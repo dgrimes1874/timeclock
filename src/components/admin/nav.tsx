@@ -12,7 +12,7 @@ import {
   SidebarFooter,
 } from '@/components/ui/sidebar';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Home, Users, FileText, Timer, LogOut } from 'lucide-react';
+import { Home, Users, FileText, Timer, LogOut, Clock } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useAuth, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
@@ -20,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const navItems = [
   { href: '/dashboard', icon: Home, label: 'Dashboard' },
+  { href: '/timeclock', icon: Clock, label: 'Time Clock' },
   { href: '/employees', icon: Users, label: 'Employees' },
   { href: '/reports', icon: FileText, label: 'Reports' },
 ];

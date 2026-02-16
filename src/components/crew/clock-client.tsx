@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -18,7 +18,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function ClockClient() {
   const firestore = useFirestore();
-  const { user: adminUser } = useUser(); // Check for admin user session
+  const { user: adminUser } = useUser();
   const { data: employees = [], loading: employeesLoading } = useCollection<Employee>('employees');
   const [timeEntries, setTimeEntries] = useState<Document<TimeEntry>[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
@@ -30,6 +30,14 @@ export default function ClockClient() {
   const [isClocking, setIsClocking] = useState(false);
   const [isFetchingEntries, setIsFetchingEntries] = useState(false);
 
+  // Only show active employees
+  const activeEmployees = useMemo(() => {
+    return employees.filter(e => e.active !== false).sort((a, b) => {
+      const lastA = a.name.split(' ').pop()?.toLowerCase() || '';
+      const lastB = b.name.split(' ').pop()?.toLowerCase() || '';
+      return lastA.localeCompare(lastB);
+    });
+  }, [employees]);
 
   useEffect(() => {
     setIsClient(true);
@@ -65,7 +73,7 @@ export default function ClockClient() {
     fetchTimeEntries();
   }, [selectedEmployeeId, firestore]);
 
-  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
+  const selectedEmployee = activeEmployees.find(e => e.id === selectedEmployeeId);
   const todayEntryForSelected = timeEntries[0];
 
   const status = todayEntryForSelected?.clockIn && !todayEntryForSelected?.clockOut
@@ -82,7 +90,7 @@ export default function ClockClient() {
     const now = new Date();
     const nowTimestamp = Timestamp.fromDate(now);
 
-    if (status === 'Clocked Out') { // Clocking In
+    if (status === 'Clocked Out') {
       const collRef = collection(firestore, 'timeEntries');
       const newEntry: Omit<TimeEntry, 'id' | 'clockOut'> & { clockOut: null } = {
         employeeId: selectedEmployeeId,
@@ -109,7 +117,7 @@ export default function ClockClient() {
         })
         .finally(() => setIsClocking(false));
 
-    } else { // Clocking Out
+    } else {
       if (todayEntryForSelected) {
         const entryRef = doc(firestore, 'timeEntries', todayEntryForSelected.id);
         const updatedData = { clockOut: nowTimestamp };
@@ -163,7 +171,7 @@ export default function ClockClient() {
               <SelectValue placeholder={employeesLoading ? "Loading employees..." : "Select Your Name..."} />
             </SelectTrigger>
             <SelectContent>
-              {employees.map(employee => (
+              {activeEmployees.map(employee => (
                 <SelectItem key={employee.id} value={employee.id} className="h-10 text-base">
                   {employee.name}
                 </SelectItem>
