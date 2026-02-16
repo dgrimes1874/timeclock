@@ -300,12 +300,6 @@ export default function TimeclockPublicClient() {
                 {currentTime ? format(currentTime, 'eeee, MMMM d') : ''}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10"
-            >
-            </Button>
           </div>
         </div>
 
