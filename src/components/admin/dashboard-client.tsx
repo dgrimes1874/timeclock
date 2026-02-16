@@ -10,7 +10,7 @@ import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { Clock, CheckCircle, XCircle, AlertTriangle, Users } from 'lucide-react';
 import { useCollection, useFirestore } from '@/firebase';
-import { collection, query, where, Timestamp } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 
 interface CombinedEntry {
   employee: Document<Employee>;
@@ -30,8 +30,8 @@ export default function DashboardClient() {
     const endOfToday = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
     return query(
       collection(firestore, 'timeEntries'), 
-      where('date', '>=', Timestamp.fromDate(startOfToday)),
-      where('date', '<', Timestamp.fromDate(endOfToday))
+      where('date', '>=', startOfToday),
+      where('date', '<', endOfToday)
     );
   }, [firestore, todayStr]);
 
