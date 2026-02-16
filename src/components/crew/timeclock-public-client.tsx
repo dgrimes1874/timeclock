@@ -7,8 +7,8 @@ import type { Employee, TimeEntry, Document } from '@/lib/data';
 import { format } from 'date-fns';
 import { isLate } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, LogOut, Loader2, Star, Timer, Lock } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { LogIn, LogOut, Loader2, Star, Timer } from 'lucide-react';
+
 import { useCollection, useFirestore } from '@/firebase';
 import { collection, query, where, addDoc, updateDoc, Timestamp, doc, onSnapshot } from 'firebase/firestore';
 
@@ -142,7 +142,6 @@ export default function TimeclockPublicClient() {
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
   const { toast } = useToast();
-  const router = useRouter();
 
   // Animation states
   const [showConfetti, setShowConfetti] = useState(false);
@@ -305,10 +304,7 @@ export default function TimeclockPublicClient() {
               variant="ghost"
               size="icon"
               className="h-10 w-10"
-              onClick={() => router.push('/login')}
-              title="Admin Login"
             >
-              <Lock className="h-5 w-5" />
             </Button>
           </div>
         </div>
@@ -357,7 +353,7 @@ export default function TimeclockPublicClient() {
                     }`}
                   />
 
-                  <CardHeader className="pb-3 pt-5">
+                  <CardHeader className="pb-1 pt-4">
                     <CardTitle className="text-lg">{employee.name}</CardTitle>
                     <p className="text-sm text-muted-foreground">
                       {status === 'in' && gotBonus && '🟢 Clocked In — On Time'}
@@ -368,9 +364,9 @@ export default function TimeclockPublicClient() {
                     </p>
                   </CardHeader>
 
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-2 pb-3">
                     {entry?.clockIn && (
-                      <div className="bg-muted/50 rounded-md p-3 space-y-1 text-sm">
+                      <div className="bg-muted/50 rounded-md p-2 space-y-0.5 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Clock In:</span>
                           <span className="font-medium">
@@ -391,7 +387,7 @@ export default function TimeclockPublicClient() {
                     <div className="flex gap-2">
                       {status === 'out' && (
                         <Button
-                          className="flex-1 h-14 text-lg"
+                          className="flex-1 h-10 text-base"
                           onClick={() => handleClock(employee, 'in')}
                           disabled={isClocking}
                         >
@@ -406,7 +402,7 @@ export default function TimeclockPublicClient() {
 
                       {status === 'in' && (
                         <Button
-                          className="flex-1 h-14 text-lg"
+                          className="flex-1 h-10 text-base"
                           variant="secondary"
                           onClick={() => handleClock(employee, 'out')}
                           disabled={isClocking}
@@ -421,7 +417,7 @@ export default function TimeclockPublicClient() {
                       )}
 
                       {status === 'done' && (
-                        <div className="flex-1 h-14 flex items-center justify-center text-muted-foreground text-sm">
+                        <div className="flex-1 h-10 flex items-center justify-center text-muted-foreground text-sm">
                           ✅ Shift complete for today
                         </div>
                       )}
