@@ -159,12 +159,23 @@ export default function TimeclockPublicClient() {
       return lastA.localeCompare(lastB);
     });
   }, [activeEmployees]);
-
   useEffect(() => {
     setIsClient(true);
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timer = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+      if (now.getHours() === 4 && now.getMinutes() === 0 && now.getSeconds() < 2) {
+        window.location.reload();
+      }
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+
+
+
+
+
 
   useEffect(() => {
     if (!firestore || activeEmployees.length === 0) return;
